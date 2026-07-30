@@ -50,17 +50,14 @@ struct ResizeHandles: View {
             }
     }
 
+    /// 下角只有手势，不画任何东西。
+    ///
+    /// 这里试过画一对折角标记，但岛的下角是 12pt 圆角、贴着桌面，
+    /// 一对直角线画上去读起来是「岛外面还套了个框」，比没有更糟。
+    /// 可拖这件事交给底边那条横条提示，以及光标移上来时的形状变化。
     private func corner(isLeading: Bool) -> some View {
         handle(width: true, height: true, cursor: Self.cornerCursor(isLeading: isLeading))
             .frame(width: Layout.cornerSize.width, height: Layout.cornerSize.height)
-            .overlay(alignment: isLeading ? .bottomLeading : .bottomTrailing) {
-                CornerMark(isLeading: isLeading)
-                    // 底部圆角 12pt，角标要往里躲开那道弧，不然是画在岛外面。
-                    .padding(Layout.cornerMarkInset)
-                    // 填色的 Shape 默认是吃点击的 —— 装饰会把它正在提示的那个手势吞掉。
-                    // 这里和底边横条都必须显式放行，否则角落反而是唯一拖不动的地方。
-                    .allowsHitTesting(false)
-            }
     }
 
     // MARK: - 拖拽
@@ -116,21 +113,6 @@ struct ResizeHandles: View {
     private enum Layout {
         static let edgeThickness: CGFloat = 6
         static let cornerSize = CGSize(width: 30, height: 20)
-        static let cornerMarkInset: CGFloat = 5
-    }
-}
-
-/// 下角的两道短线，让人看出这里能斜着拖。
-private struct CornerMark: View {
-    let isLeading: Bool
-
-    var body: some View {
-        ZStack(alignment: isLeading ? .bottomLeading : .bottomTrailing) {
-            Rectangle().frame(width: 8, height: 1.5)
-            Rectangle().frame(width: 1.5, height: 8)
-        }
-        .frame(width: 8, height: 8)
-        .foregroundStyle(Color.white.opacity(0.14))
     }
 }
 
