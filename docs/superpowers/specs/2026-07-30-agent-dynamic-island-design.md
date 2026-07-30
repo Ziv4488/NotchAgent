@@ -147,7 +147,9 @@ protocol AgentSession: AnyObject, Identifiable {
 | `Notification` | 岛转琥珀色，表示 Agent 在等待用户 |
 | `Stop` | 进入 `notice` 态，该 tab 打未读标记 |
 
-**实现前需验证**：`--settings` 与用户既有设置的合并语义（是覆盖还是叠加）需针对实际安装的 Claude Code 版本确认；若该版本不支持从参数注入 hooks，退化方案是为岛维护一份独立的 `CLAUDE_CONFIG_DIR`。
+**已验证可行**（Claude Code 2.1.220，见第 11 节）：`--settings` 与用户设置**合并**而非覆盖，且不同来源的 hooks **叠加**触发。因此一份只含 hooks 的文件不会干扰用户的全局或项目级配置，无需独立 `CLAUDE_CONFIG_DIR`。
+
+`SessionStart` 事件的 payload 含 `cwd`、`session_id`、`source`、`transcript_path`。`transcript_path` 指向该会话的 JSONL 记录，作为 hook 通道失效时的备用状态来源（不在 v1 实现）。
 
 **授权只在 PTY 中发生。** 岛不提供第二套「允许 / 拒绝」按钮，`Notification` 事件仅用于点亮岛、引导用户去看终端。这避免了两套 UI 状态不一致。
 
@@ -236,8 +238,26 @@ v1：任务是 app 的子进程。退出 app 时若有任务在跑，先弹确�
 
 第一期不实现 `AppSession`，但 `AgentSession` 协议按第 4.2 节定义完整，tab 条已支持异构 tab 类型。
 
-## 11. 待实现前验证的事项
+## 11. 实现前的验证事项
 
-1. `--settings` 注入 hooks 的合并语义（见 5.2），决定是否需要独立 `CLAUDE_CONFIG_DIR`
-2. `.nonactivatingPanel` 动态切换 `canBecomeKey` 后 SwiftTerm 能否正常接收按键（含中文输入法）
-3. ChatGPT 桌面 app 对 `AXPosition` / `AXSize` 的响应情况（Electron app 的 AX 支持不一致）
+### 11.1 `--settings` 注入 hooks —— 已验证通过
+
+环境：Claude Code 2.1.220，macOS 26.5。复现脚本 `scripts/spike-hooks.sh`。
+
+| 问题 | 结论 |
+|---|---|
+| hook 是否触发 | `SessionStart`、`PreToolUse`、`PostToolUse`、`Stop` 全部触发。`Notification` 在该轮无需用户介入，未触发（符合预期） |
+| payload 是否带 `session_id` | 每个事件都带。`SessionStart` 的字段为 `cwd` / `hook_event_name` / `session_id` / `source` / `transcript_path` |
+| 与用户设置是合并还是覆盖 | **合并**。只含 hooks 的文件注入后，用户设置里的 `model: opus` 仍然生效 |
+| CLI 侧设置能否覆盖同名键 | 能。文件里写 `model: haiku` 时该轮确实用 haiku，即 CLI 侧对它定义的键优先 |
+| 项目级已有的 hooks 会否被顶掉 | **不会，叠加触发**。项目 `.claude/settings.json` 的 `PostToolUse` 与注入的 `PostToolUse` 同时收到事件 |
+
+**结论**：方案按 5.2 原样实施，不需要独立 `CLAUDE_CONFIG_DIR`。
+
+### 11.2 非激活面板中的键盘焦点 —— 待验证
+
+`.nonactivatingPanel` 动态切换 `canBecomeKey` 后 SwiftTerm 能否正常接收按键，**中文输入法**是重点。见实现计划 0.4。
+
+### 11.3 第三方 app 的 AX 响应 —— 待验证
+
+ChatGPT 等 Electron app 对 `AXPosition` / `AXSize` 的响应情况与窗口最小尺寸。见实现计划 0.5。
