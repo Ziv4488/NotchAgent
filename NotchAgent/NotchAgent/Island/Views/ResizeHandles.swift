@@ -43,6 +43,7 @@ struct ResizeHandles: View {
             .overlay {
                 // 不画出来就等于没有这个功能。
                 Capsule().fill(Color.white.opacity(0.16)).frame(width: 28, height: 3)
+                    .allowsHitTesting(false)
             }
     }
 
@@ -53,6 +54,9 @@ struct ResizeHandles: View {
                 CornerMark(isLeading: isLeading)
                     // 底部圆角 12pt，角标要往里躲开那道弧，不然是画在岛外面。
                     .padding(Layout.cornerMarkInset)
+                    // 填色的 Shape 默认是吃点击的 —— 装饰会把它正在提示的那个手势吞掉。
+                    // 这里和底边横条都必须显式放行，否则角落反而是唯一拖不动的地方。
+                    .allowsHitTesting(false)
             }
     }
 
@@ -108,7 +112,7 @@ struct ResizeHandles: View {
 
     private enum Layout {
         static let edgeThickness: CGFloat = 6
-        static let cornerSize = CGSize(width: 24, height: 18)
+        static let cornerSize = CGSize(width: 30, height: 20)
         static let cornerMarkInset: CGFloat = 5
     }
 }
