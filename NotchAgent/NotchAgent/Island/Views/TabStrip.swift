@@ -85,6 +85,13 @@ private struct TabChip: View {
                     .font(.system(size: 5, weight: .black))
                     .foregroundStyle(.black)
             }
+        case .waiting:
+            // 停下来等你回话。这个必须比「在跑」更抓眼 —— 不理它就一直卡着。
+            dot(IslandTheme.blue) {
+                Image(systemName: "questionmark")
+                    .font(.system(size: 5, weight: .black))
+                    .foregroundStyle(.white)
+            }
         case .running:
             dot(IslandTheme.amber) { EmptyView() }
         default:

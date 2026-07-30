@@ -64,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("新建假会话 refactor-auth", #selector(debugStartA)),
             ("新建假会话 写测试", #selector(debugStartB)),
             ("贴附 ChatGPT", #selector(debugAttach)),
+            ("最早的会话开始问你", #selector(debugAsk)),
             ("完成最早的会话", #selector(debugFinish)),
             ("展开", #selector(debugExpand)),
             ("收起", #selector(debugDismiss)),
@@ -82,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func debugStartA() { model.debugStartSession(named: "refactor-auth") }
     @objc private func debugStartB() { model.debugStartSession(named: "写测试") }
     @objc private func debugAttach() { model.debugAttachApp(named: "ChatGPT") }
+    @objc private func debugAsk() { model.debugAskOldestRunning() }
     @objc private func debugFinish() { model.debugFinishOldestRunning() }
     @objc private func debugExpand() { model.send(.click) }
     @objc private func debugDismiss() { model.send(.dismiss) }

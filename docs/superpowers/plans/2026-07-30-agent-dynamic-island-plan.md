@@ -216,7 +216,21 @@ func reduce(_ state: IslandState, _ event: IslandEvent, _ ctx: IslandContext) ->
 | 1.4 `IslandState` | 完成。全组合覆盖 + 幂等性断言 |
 | 1.5 `IslandShell` | 完成。四态已截图比对 `states-v2.html` |
 
-测试：40 个，全过。手动清单见 `docs/manual-tests.md`，**尚未人工跑过**。
+测试：64 个，全过。手动清单见 `docs/manual-tests.md`。
+
+### 第二轮手测反馈的修正
+
+| 反馈 | 修法 |
+|---|---|
+| 收起态整体太长，一行只放得下 7 个汉字，只需要约 10 个英文字符 | `idleSideBleed` 90→80、`runningSideBleed` 110→88。每侧固定开销 20pt，文字预算 60pt |
+| 左右两侧信息没被刘海分开，右侧文字从刘海里就开始了 | 状态带原本用 `Spacer(minLength: notchGap)` —— 那**只保证下限**，一侧内容超长就把中缝压掉。改成左右定宽 `(岛宽 − 刘海宽) ÷ 2`、中间放死占位 |
+| 只看得到黄灯和完成，看不到「执行中」「询问」的形态 | 加 `Status.waiting`（停下来等你回话）。四态改为：琥珀慢呼吸 = 在跑、蓝色快闪 = 等你回话、绿色 = 完成、灰色不发光 = 已结束。光靠颜色分不出「在跑」和「卡住」，用频率区分 |
+| 右边只要当前执行时间和开着几个窗口 | 右侧改为真实计时（`IslandTab.startedAt` + `TimelineView` 每秒刷）+ 会话数，原本的假动作文案删掉 |
+| 想在对话框里看到上下文/5小时/周用量、mode（保留快捷键）、subagent | 新增 `UsageBar`（输入框上方 22pt 一行）与 `SessionUsage` 数据结构。模式芯片可点、⇧Tab 同效 |
+| 说过窗口能拉大，但没看到 | 新增 `ResizeGrip`：底边中段改高、两下角改宽高（对称，位移 ×2）。`NSPanel` 跟着 `onExpandedSizeChanged` 一起长大 |
+| 展开态四周还有一层黑色透明阴影 | 删掉 `.shadow(black 0.5, r12, y8)`。投影落在透明画布上是一层洗不掉的黑雾 —— 这是继描边之后第二个「加装饰反而更脏」的例子 |
+
+顺带修掉一个自己引入的 bug：`idleSideBleed` 收窄后 `NotchAgent` 实测 64pt 放不下 54pt 的空间，**折成了两行**。空态里那个空心点不携带信息，砍掉它把宽度让给名字，并给状态带加了 `lineLimit(1)` 硬兜底 + 一条量文字宽度的回归测试。
 
 ### 两个 AppKit 坑
 

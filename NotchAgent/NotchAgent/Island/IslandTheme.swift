@@ -16,6 +16,11 @@ enum IslandTheme {
     // 状态点
     static let green = Color(red: 0.19, green: 0.82, blue: 0.35)   // #30d158
     static let amber = Color(red: 1.00, green: 0.62, blue: 0.04)   // #ff9f0a
+    static let blue = Color(red: 0.04, green: 0.52, blue: 1.00)    // #0a84ff —— 在等你回话
+
+    // 用量条
+    static let meterTrack = Color.white.opacity(0.10)
+    static let meterFill = Color.white.opacity(0.42)
 
     // 容器
     static let tabActiveFill = Color.white.opacity(0.11)
@@ -32,6 +37,7 @@ enum IslandTheme {
     static let tabFont = Font.system(size: 11, weight: .medium)
     static let bodyFont = Font.system(size: 11, design: .monospaced)
     static let inputFont = Font.system(size: 12)
+    static let meterFont = Font.system(size: 9.5, weight: .medium)
 
     /// 状态切换的动画。宽、高、圆角同时插值。
     static let morph = Animation.spring(response: 0.38, dampingFraction: 0.78)

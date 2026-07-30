@@ -35,9 +35,9 @@ struct IslandShell: View {
                             .fill(model.isHovering && model.state != .expanded
                                   ? IslandTheme.hoverTint : Color.clear)
                     }
-                    // 原本这里描了一圈 0.5pt 白色高光，但在纯黑岛体上它读起来是一道
-                    // 明显的灰边而不是"浮起"，展开态尤其难看。只留阴影。
-                    .shadow(color: .black.opacity(0.5), radius: 12, y: 8)
+                    // 这里先后去掉过两样东西：0.5pt 白色描边，和一圈投影。
+                    // 岛是纯黑的，描边读起来是灰框不是高光；投影落在透明画布上是一层
+                    // 洗不掉的黑雾，展开态四周尤其明显。岛靠形状立住，不靠这两样。
             }
             // 只有轮廓内才吃鼠标事件，画布其余部分让点击穿透到下面的 app。
             .contentShape(NotchShape(bottomRadius: radii.bottom, invertedRadius: radii.inverted))
@@ -45,11 +45,17 @@ struct IslandShell: View {
             .onTapGesture {
                 if model.state != .expanded { model.send(.click) }
             }
+            .overlay(alignment: .bottom) {
+                if model.state == .expanded {
+                    ResizeGrip(model: model).frame(width: size.width)
+                }
+            }
     }
 
     private var content: some View {
         VStack(spacing: 0) {
             StatusBand(model: model,
+                       totalWidth: size.width,
                        notchGap: model.geometry.notchWidth ?? 0,
                        height: model.geometry.menuBarHeight)
 
@@ -67,8 +73,12 @@ struct IslandShell: View {
                 } else {
                     ContentArea(tab: model.selectedTab)
                         .transition(.opacity)
-                    // app tab 的内容区和输入框整体不绘制，真实窗口贴在下面（spec 3.2）。
+                    // app tab 的内容区、用量条和输入框整体不绘制，
+                    // 真实窗口贴在下面，额度也不归我们管（spec 3.2）。
                     if model.selectedTab?.kind != .app {
+                        UsageBar(usage: model.selectedTab?.usage ?? SessionUsage(),
+                                 onCycleMode: model.cycleMode)
+                            .transition(.opacity)
                         InputBar()
                             .transition(.opacity)
                     }

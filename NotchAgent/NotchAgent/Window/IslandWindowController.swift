@@ -23,6 +23,12 @@ final class IslandWindowController {
         model.onStateChanged = { [weak self] _, next in
             self?.stateDidChange(to: next)
         }
+        // 拖拽调整展开尺寸时，承载岛的面板也得跟着长大，否则岛会被窗口边界切掉。
+        // 拖拽期间没有动画，逐帧 setFrame 是跟手的，不会像状态切换那样抖。
+        model.onExpandedSizeChanged = { [weak self] in
+            guard let self, let window = self.window else { return }
+            window.setFrame(self.model.metrics.containerFrame, display: true)
+        }
     }
 
     // MARK: - 生命周期
@@ -148,14 +154,21 @@ final class IslandWindowController {
         // 收起只由 ✕ 与 Esc 触发，都是明确动作。
 
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == 53 else { return event }
+            let isEscape = event.keyCode == 53
+            let isShiftTab = event.keyCode == 48 && event.modifierFlags.contains(.shift)
+            guard isEscape || isShiftTab else { return event }
+
             // NSEvent 不是 Sendable，不能穿过隔离边界返回，所以只把「有没有吃掉」传出来。
             var handled = false
             MainActor.assumeIsolated {
                 guard let self, self.model.state == .expanded else { return }
-                // Esc 先取消新建流程，再按一次才收起岛。
-                // 第 2 阶段终端接上后，Esc 要先给 PTY 当中断，这里会再让位。
-                if self.model.isComposingNewTask, !self.model.tabs.isEmpty {
+                if isShiftTab {
+                    // 第 2 阶段终端接上后，⇧Tab 应当原样喂给 PTY、由 Claude Code 自己切；
+                    // 现在先在岛内切，把这个键位占住不让别人抢走。
+                    self.model.cycleMode()
+                } else if self.model.isComposingNewTask, !self.model.tabs.isEmpty {
+                    // Esc 先取消新建流程，再按一次才收起岛。
+                    // 第 2 阶段终端接上后，Esc 要先给 PTY 当中断，这里会再让位。
                     self.model.cancelNewTask()
                 } else {
                     self.model.send(.dismiss)

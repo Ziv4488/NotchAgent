@@ -10,16 +10,22 @@ import CoreGraphics
 /// 可调的排版常量。集中在这里，1.5 调视觉时只动这一处。
 struct IslandConstants: Equatable, Sendable {
     /// idle 态在刘海左右各多出的宽度。
-    /// 比 running 窄一点，让「闲着」和「在跑」一眼能分开，但仍放得下一行信息。
-    var idleSideBleed: CGFloat = 90
-    /// running 态在刘海左右各多出的宽度。
-    var runningSideBleed: CGFloat = 110
+    ///
+    /// 每侧要放下「圆点 + 一行字」：10pt 内边距 + 5pt 点 + 5pt 间距 = 20pt 固定开销，
+    /// 剩下 60pt 给文字 —— 11pt 系统字下约 10 个英文字符 / 5 个汉字（实测 "session.ts" 54pt）。
+    /// 再宽就纯粹是在挡菜单栏了（见 spec 3.1 的「代价」）。
+    var idleSideBleed: CGFloat = 80
+    /// running 态在刘海左右各多出的宽度。比 idle 宽一档，
+    /// 让「闲着」和「在跑」一眼分得开，右侧也放得下计时 + 窗口数。
+    var runningSideBleed: CGFloat = 88
     /// expanded 态的默认宽度（可拖拽调整并记住）。约等于 80 列终端。
     var expandedWidth: CGFloat = 560
     /// tab 条高度。
     var tabStripHeight: CGFloat = 34
-    /// expanded 态内容区高度。
+    /// expanded 态内容区的默认高度（可拖拽调整并记住）。
     var contentHeight: CGFloat = 320
+    /// expanded 态用量条高度（上下文 / 5 小时 / 周 / mode / subagent）。
+    var usageBarHeight: CGFloat = 22
     /// expanded 态输入框（含外边距）高度。
     var inputBarHeight: CGFloat = 44
     /// 无刘海屏的宽度基准，替代刘海宽度（spec 3.4）。
@@ -43,15 +49,24 @@ struct IslandMetrics {
     let geometry: ScreenGeometryProviding
     var constants: IslandConstants
 
-    /// expanded 宽度是用户可调的，覆盖 constants 里的默认值。
+    /// expanded 尺寸是用户可拖拽调整的，覆盖 constants 里的默认值。
     var expandedWidth: CGFloat
+    var expandedContentHeight: CGFloat
 
     init(geometry: ScreenGeometryProviding,
          constants: IslandConstants = .default,
-         expandedWidth: CGFloat? = nil) {
+         expandedWidth: CGFloat? = nil,
+         expandedContentHeight: CGFloat? = nil) {
         self.geometry = geometry
         self.constants = constants
         self.expandedWidth = expandedWidth ?? constants.expandedWidth
+        self.expandedContentHeight = expandedContentHeight ?? constants.contentHeight
+    }
+
+    /// expanded 态里内容区之外的固定开销：状态带 + tab 条 + 用量条 + 输入框。
+    var expandedChromeHeight: CGFloat {
+        geometry.menuBarHeight + constants.tabStripHeight
+            + constants.usageBarHeight + constants.inputBarHeight
     }
 
     /// 宽度基准：有刘海取刘海实际宽度，无刘海取固定值。
@@ -81,10 +96,7 @@ struct IslandMetrics {
 
         case .expanded:
             return CGSize(width: expandedWidth,
-                          height: geometry.menuBarHeight
-                                + constants.tabStripHeight
-                                + constants.contentHeight
-                                + constants.inputBarHeight)
+                          height: expandedChromeHeight + expandedContentHeight)
         }
     }
 

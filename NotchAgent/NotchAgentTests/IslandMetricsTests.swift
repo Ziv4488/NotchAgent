@@ -36,17 +36,27 @@ struct IslandMetricsTests {
             let idle = metrics.size(for: .idle).width
             let running = metrics.size(for: .running).width
             #expect(idle < running, "\(name)")
-            // 左右各要放得下一段文字，太窄就没意义了。
-            #expect(idle - metrics.baseWidth >= 120, "\(name)")
+            // 每侧固定开销 20pt（内边距 + 圆点 + 间距），再留够约 10 个英文字符。
+            #expect(idle - metrics.baseWidth >= 2 * (20 + 50), "\(name)")
         }
     }
 
-    @Test("running 宽度 = 基准宽 + 左右各 110pt")
+    @Test("岛不该比它要盖住的菜单栏还夸张：每侧外延都在 100pt 以内")
+    func sideBleedStaysModest() {
+        // 岛比刘海宽多少，就永久盖住菜单栏多少（见 spec 3.1 的「代价」）。
+        // 这条守住的是「别再变宽」，不是某个具体数字。
+        let constants = IslandConstants.default
+        #expect(constants.idleSideBleed <= 100)
+        #expect(constants.runningSideBleed <= 100)
+    }
+
+    @Test("running 宽度 = 基准宽 + 左右各一份 runningSideBleed")
     func runningWidth() {
         for (name, geometry) in allGeometries {
             let metrics = IslandMetrics(geometry: geometry)
-            let expected = (geometry.notchWidth ?? metrics.constants.fallbackNotchWidth) + 220
-            #expect(metrics.size(for: .running).width == expected, "\(name)")
+            let base = geometry.notchWidth ?? metrics.constants.fallbackNotchWidth
+            #expect(metrics.size(for: .running).width
+                    == base + metrics.constants.runningSideBleed * 2, "\(name)")
         }
     }
 
@@ -108,14 +118,34 @@ struct IslandMetricsTests {
         }
     }
 
-    @Test("expanded 高度 = 菜单栏 + tab 条 + 内容区 + 输入框")
+    @Test("expanded 高度 = 菜单栏 + tab 条 + 内容区 + 用量条 + 输入框")
     func expandedHeight() {
         for (name, geometry) in allGeometries {
             let metrics = IslandMetrics(geometry: geometry)
             let c = metrics.constants
-            let expected = geometry.menuBarHeight + c.tabStripHeight + c.contentHeight + c.inputBarHeight
+            let expected = geometry.menuBarHeight + c.tabStripHeight
+                + c.contentHeight + c.usageBarHeight + c.inputBarHeight
             #expect(metrics.size(for: .expanded).height == expected, "\(name)")
         }
+    }
+
+    @Test("拖大内容区，expanded 只长内容区那一截，其余高度不动")
+    func expandedGrowsOnlyByContentHeight() {
+        let geometry = FakeScreenGeometry.macBook14
+        let base = IslandMetrics(geometry: geometry)
+        let taller = IslandMetrics(geometry: geometry, expandedContentHeight: base.expandedContentHeight + 120)
+        #expect(taller.size(for: .expanded).height == base.size(for: .expanded).height + 120)
+        #expect(taller.expandedChromeHeight == base.expandedChromeHeight)
+    }
+
+    @Test("窗口 frame 跟着拖拽后的尺寸走，岛才不会被切掉")
+    func containerFollowsResizedExpanded() {
+        let geometry = FakeScreenGeometry.macBook14
+        let metrics = IslandMetrics(geometry: geometry, expandedWidth: 820, expandedContentHeight: 500)
+        let frame = metrics.containerFrame
+        #expect(frame.width == 820 + metrics.constants.invertedCornerRadius * 2)
+        #expect(frame.height == metrics.size(for: .expanded).height)
+        #expect(frame.maxY == geometry.screenFrame.maxY)
     }
 
     @Test("高度单调不减：idle ≤ running < notice < expanded")
