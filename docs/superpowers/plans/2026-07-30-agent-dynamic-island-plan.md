@@ -206,6 +206,32 @@ func reduce(_ state: IslandState, _ event: IslandEvent, _ ctx: IslandContext) ->
 
 **第 1 阶段完成标准**：运行 app，用一个调试菜单手动触发事件，岛能在四态间正确变形。还没有真实会话。
 
+## 第 1 阶段结果（代码完成，待人工验收）
+
+| 步骤 | 状态 |
+|---|---|
+| 1.1 `ScreenGeometry` / `IslandMetrics` | 完成。实测本机：菜单栏 32pt、刘海宽 **185pt**（不是估的 200）。四种几何 × 四态共 17 个断言 |
+| 1.2 `NotchShape` | 完成。内凹拐角方向极易画反、而深色截图上肉眼分不出来，所以改用 `Path.contains` 做几何断言钉死 |
+| 1.3 `NotchWindow` / `IslandWindowController` | 完成。踩到两个 AppKit 坑，见下 |
+| 1.4 `IslandState` | 完成。全组合覆盖 + 幂等性断言 |
+| 1.5 `IslandShell` | 完成。四态已截图比对 `states-v2.html` |
+
+测试：40 个，全过。手动清单见 `docs/manual-tests.md`，**尚未人工跑过**。
+
+### 两个 AppKit 坑
+
+| 现象 | 原因与修法 |
+|---|---|
+| 岛被压到菜单栏下面 | `NSWindow` 在 `setFrame` 时会调 `constrainFrameRect` 把窗口推出菜单栏区域。必须覆盖它原样返回 |
+| 岛的层级莫名其妙变成 3 | `isFloatingPanel = true` 的 setter 会把 `level` 改成 `.floating`(3)。**必须先设 `isFloatingPanel` 再设 `level`**，否则岛掉到菜单栏（24）下面 |
+
+两个坑的表现一样（岛在菜单栏下面），但成因无关，得分别修。已写进 `NotchWindow` 的注释。
+
+### 一处偏离视觉定稿
+
+`states-v2.html` 里正在跑的 tab 用一个黄点顶替身份图标，但同一张图里选中的那个（也在跑）却显示图标 —— 定稿自相矛盾。
+实现取「**图标常在、状态挂角标**」：完成未读挂绿色对勾，运行中挂琥珀点。理由是 tab 条最要紧的是「哪个是哪个」，用状态顶掉身份会让多 tab 时认不出来。
+
 ---
 
 ## 第 2 阶段 · Claude Code 会话（第一期交付）
