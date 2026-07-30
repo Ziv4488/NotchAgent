@@ -112,6 +112,7 @@
 			);
 			name = NotchAgent;
 			packageProductDependencies = (
+				D01A5C0000000000000000A2 /* SwiftTerm */,
 			);
 			productName = NotchAgent;
 			productReference = 4CAA999B301B629000E865C0 /* NotchAgent.app */;
@@ -195,6 +196,9 @@
 			);
 			mainGroup = 4CAA9992301B629000E865C0;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D01A5C0000000000000000A1 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4CAA999C301B629000E865C0 /* Products */;
 			projectDirPath = "";
@@ -575,6 +579,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D01A5C0000000000000000A1 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.15.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D01A5C0000000000000000A2 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D01A5C0000000000000000A1 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 4CAA9993301B629000E865C0 /* Project object */;
 }

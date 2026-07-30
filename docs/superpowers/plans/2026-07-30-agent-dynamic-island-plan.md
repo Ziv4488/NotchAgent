@@ -20,7 +20,8 @@
 | 测试系统 | Swift Testing |
 | 沙盒 | 关闭（需起子进程 + 辅助功能 API） |
 | 最低系统 | macOS 14 |
-| 依赖 | SwiftTerm（SPM） |
+| 依赖 | SwiftTerm（SPM，`upToNextMajor` from 1.15.0） |
+| 环境前置 | **Metal 工具链**：`xcodebuild -downloadComponent MetalToolchain`（约 690MB）。SwiftTerm 1.15 含 Metal 着色器，而 Xcode 26 默认不带该工具链，不装会构建失败并提示 `cannot execute tool 'metal'` |
 | 构建命令 | `xcodebuild -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -configuration Debug build` |
 | 测试命令 | `xcodebuild test -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -destination 'platform=macOS'` |
 
