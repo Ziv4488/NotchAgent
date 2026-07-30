@@ -37,9 +37,7 @@ struct IslandShell: View {
                     }
                     // 原本这里描了一圈 0.5pt 白色高光，但在纯黑岛体上它读起来是一道
                     // 明显的灰边而不是"浮起"，展开态尤其难看。只留阴影。
-                    .shadow(color: .black.opacity(model.state == .idle ? 0.25 : 0.55),
-                            radius: model.state == .idle ? 4 : 14,
-                            y: model.state == .idle ? 2 : 10)
+                    .shadow(color: .black.opacity(0.5), radius: 12, y: 8)
             }
             // 只有轮廓内才吃鼠标事件，画布其余部分让点击穿透到下面的 app。
             .contentShape(NotchShape(bottomRadius: radii.bottom, invertedRadius: radii.inverted))

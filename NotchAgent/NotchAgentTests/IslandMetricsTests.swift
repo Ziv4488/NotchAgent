@@ -20,12 +20,24 @@ struct IslandMetricsTests {
 
     // MARK: - 宽度
 
-    @Test("idle 宽度 = 基准宽 + 左右各 4pt")
+    @Test("idle 宽度 = 基准宽 + 左右各一份 idleSideBleed")
     func idleWidth() {
         for (name, geometry) in allGeometries {
             let metrics = IslandMetrics(geometry: geometry)
-            let expected = (geometry.notchWidth ?? metrics.constants.fallbackNotchWidth) + 8
-            #expect(metrics.size(for: .idle).width == expected, "\(name)")
+            let base = geometry.notchWidth ?? metrics.constants.fallbackNotchWidth
+            #expect(metrics.size(for: .idle).width == base + metrics.constants.idleSideBleed * 2, "\(name)")
+        }
+    }
+
+    @Test("idle 比 running 窄 —— 闲着和在跑要一眼分得开，但都放得下一行信息")
+    func idleIsNarrowerThanRunning() {
+        for (name, geometry) in allGeometries {
+            let metrics = IslandMetrics(geometry: geometry)
+            let idle = metrics.size(for: .idle).width
+            let running = metrics.size(for: .running).width
+            #expect(idle < running, "\(name)")
+            // 左右各要放得下一段文字，太窄就没意义了。
+            #expect(idle - metrics.baseWidth >= 120, "\(name)")
         }
     }
 

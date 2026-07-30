@@ -10,7 +10,8 @@ import CoreGraphics
 /// 可调的排版常量。集中在这里，1.5 调视觉时只动这一处。
 struct IslandConstants: Equatable, Sendable {
     /// idle 态在刘海左右各多出的宽度。
-    var idleSideBleed: CGFloat = 4
+    /// 比 running 窄一点，让「闲着」和「在跑」一眼能分开，但仍放得下一行信息。
+    var idleSideBleed: CGFloat = 90
     /// running 态在刘海左右各多出的宽度。
     var runningSideBleed: CGFloat = 110
     /// expanded 态的默认宽度（可拖拽调整并记住）。约等于 80 列终端。
