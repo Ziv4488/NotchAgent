@@ -9,23 +9,20 @@ import SwiftUI
 
 @main
 struct NotchAgentApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-
     var body: some Scene {
+        // 第 1 阶段会把这里换成菜单栏项 + NotchWindow，岛本身不是 WindowGroup。
         WindowGroup {
-            SpikeControlView()
-                .frame(minWidth: 560, minHeight: 520)
+            PlaceholderView()
         }
-        .windowResizability(.contentMinSize)
     }
 }
 
-/// LSUIElement 的 app 默认不会自己激活，探针阶段需要能看到并操作控制面板。
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        SpikeLog.reset()
-        SpikeLog.installKeyMonitor()
+/// 占位视图 —— 第 1.5 步换成真正的岛。
+struct PlaceholderView: View {
+    var body: some View {
+        Text("NotchAgent")
+            .font(.title2)
+            .foregroundStyle(.secondary)
+            .frame(width: 320, height: 160)
     }
 }
