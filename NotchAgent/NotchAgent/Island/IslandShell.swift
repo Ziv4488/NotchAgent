@@ -45,9 +45,11 @@ struct IslandShell: View {
             .onTapGesture {
                 if model.state != .expanded { model.send(.click) }
             }
-            .overlay(alignment: .bottom) {
+            .overlay(alignment: .top) {
                 if model.state == .expanded {
-                    ResizeGrip(model: model).frame(width: size.width)
+                    ResizeHandles(model: model,
+                                  islandSize: size,
+                                  topInset: model.geometry.menuBarHeight)
                 }
             }
     }
@@ -79,7 +81,8 @@ struct IslandShell: View {
                         UsageBar(usage: model.selectedTab?.usage ?? SessionUsage(),
                                  onCycleMode: model.cycleMode)
                             .transition(.opacity)
-                        InputBar()
+                        InputBar(isRunning: model.selectedTab?.status == .running,
+                                 onStop: model.interruptSelectedTask)
                             .transition(.opacity)
                     }
                 }

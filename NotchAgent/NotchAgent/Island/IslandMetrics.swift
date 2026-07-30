@@ -108,21 +108,45 @@ struct IslandMetrics {
                           inverted: geometry.hasNotch ? constants.invertedCornerRadius : 0)
     }
 
+    // MARK: - 可拖拽范围
+
+    /// 太窄终端排不下字，太宽就把整个桌面盖住了。
+    var expandedWidthRange: ClosedRange<CGFloat> {
+        420...max(420, geometry.screenFrame.width - 160)
+    }
+
+    var expandedContentHeightRange: ClosedRange<CGFloat> {
+        160...max(160, geometry.screenFrame.height * 0.85 - expandedChromeHeight)
+    }
+
+    /// 这块屏幕上岛能达到的最大尺寸。面板按它开，之后全程不动。
+    var maxExpandedSize: CGSize {
+        CGSize(width: expandedWidthRange.upperBound,
+               height: expandedChromeHeight + expandedContentHeightRange.upperBound)
+    }
+
     // MARK: - 窗口 frame
 
     /// 承载岛的面板 frame，全局坐标（原点左下）。
     ///
-    /// 面板**不随状态改变**，永远是最大态（expanded）的尺寸，岛在里面变形。
-    /// 每帧改 NSWindow 的 frame 会抖，交给 SwiftUI 在固定画布里插值才跟手。
+    /// 面板**既不随状态改变、也不随拖拽改变**，一开就是这块屏幕上岛能达到的最大尺寸，
+    /// 岛在里面变形。两个理由：
+    ///
+    /// 1. 状态切换时每帧改 NSWindow 的 frame 会抖，交给 SwiftUI 在固定画布里插值才跟手。
+    /// 2. 岛是相对屏幕中线对称的 —— 拖宽时窗口原点要左移、内容要在窗口里保持居中，
+    ///    这两件事一旦落到不同的绘制事务里就会看见一帧错位，也就是拖动时的闪烁。
+    ///    面板全程不动，这个问题从根上不存在。
+    ///
+    /// 代价是一大块透明画布压在屏幕上半部，全靠 `NotchHostingView` 的轮廓命中测试
+    /// 把点击放行下去 —— 那个命中测试因此是**必需**的，不是优化。
     ///
     /// 宽度额外留出两倍内凹半径 —— 内凹圆弧画在主体两侧之外，否则会被窗口边界切掉。
     var containerFrame: CGRect {
-        let expanded = size(for: .expanded)
-        let inverted = constants.invertedCornerRadius
-        let width = expanded.width + inverted * 2
+        let maxSize = maxExpandedSize
+        let width = maxSize.width + constants.invertedCornerRadius * 2
         return CGRect(x: geometry.islandCenterX - width / 2,
-                      y: geometry.screenTopY - expanded.height,
+                      y: geometry.screenTopY - maxSize.height,
                       width: width,
-                      height: expanded.height)
+                      height: maxSize.height)
     }
 }

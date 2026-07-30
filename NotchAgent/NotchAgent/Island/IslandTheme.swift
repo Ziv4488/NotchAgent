@@ -17,6 +17,7 @@ enum IslandTheme {
     static let green = Color(red: 0.19, green: 0.82, blue: 0.35)   // #30d158
     static let amber = Color(red: 1.00, green: 0.62, blue: 0.04)   // #ff9f0a
     static let blue = Color(red: 0.04, green: 0.52, blue: 1.00)    // #0a84ff —— 在等你回话
+    static let stop = Color(red: 0.90, green: 0.27, blue: 0.23)    // #e6453a —— 中断
 
     // 用量条
     static let meterTrack = Color.white.opacity(0.10)

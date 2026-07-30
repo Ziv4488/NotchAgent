@@ -8,33 +8,26 @@
 import SwiftUI
 
 struct InputBar: View {
+    /// 会话正在跑。此时发送键要变成停止键 —— 手边就该有中断的办法。
+    var isRunning: Bool = false
+    var onSubmit: (String) -> Void = { _ in }
+    var onStop: () -> Void = {}
+
     @State private var text = ""
     @FocusState private var focused: Bool
-    var onSubmit: (String) -> Void = { _ in }
 
     var body: some View {
         HStack(spacing: 7) {
-            TextField("追问或下达新指令…", text: $text)
+            TextField(isRunning ? "正在执行…" : "追问或下达新指令…", text: $text)
                 .textFieldStyle(.plain)
                 .font(IslandTheme.inputFont)
                 .foregroundStyle(IslandTheme.bright)
                 // 展开就该能直接打字，不该还要再点一下（测试 2.1）。
                 .focused($focused)
                 .onAppear { focused = true }
-                .onSubmit {
-                    guard !text.isEmpty else { return }
-                    onSubmit(text)
-                    text = ""
-                }
+                .onSubmit(send)
 
-            Image(systemName: "arrow.up")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.8))
-                .frame(width: 18, height: 18)
-                .background {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.white.opacity(0.16))
-                }
+            actionButton
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -49,5 +42,28 @@ struct InputBar: View {
         .padding(.horizontal, 7)
         .padding(.top, 6)
         .padding(.bottom, 8)
+    }
+
+    private var actionButton: some View {
+        Button(action: isRunning ? onStop : send) {
+            Image(systemName: isRunning ? "stop.fill" : "arrow.up")
+                .font(.system(size: isRunning ? 8 : 9, weight: .bold))
+                .foregroundStyle(isRunning ? Color.white : Color.white.opacity(0.8))
+                .frame(width: 18, height: 18)
+                .background {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(isRunning ? IslandTheme.stop : Color.white.opacity(0.16))
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // 第 2 阶段这里改成给 PTY 发 Esc / SIGINT，和终端里按 Esc 等效。
+        .help(isRunning ? "停止" : "发送")
+    }
+
+    private func send() {
+        guard !text.isEmpty else { return }
+        onSubmit(text)
+        text = ""
     }
 }

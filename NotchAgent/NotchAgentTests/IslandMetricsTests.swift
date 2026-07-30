@@ -138,14 +138,12 @@ struct IslandMetricsTests {
         #expect(taller.expandedChromeHeight == base.expandedChromeHeight)
     }
 
-    @Test("窗口 frame 跟着拖拽后的尺寸走，岛才不会被切掉")
-    func containerFollowsResizedExpanded() {
+    @Test("拖拽后的尺寸如实反映到岛主体上")
+    func resizedSizeFlowsIntoExpanded() {
         let geometry = FakeScreenGeometry.macBook14
         let metrics = IslandMetrics(geometry: geometry, expandedWidth: 820, expandedContentHeight: 500)
-        let frame = metrics.containerFrame
-        #expect(frame.width == 820 + metrics.constants.invertedCornerRadius * 2)
-        #expect(frame.height == metrics.size(for: .expanded).height)
-        #expect(frame.maxY == geometry.screenFrame.maxY)
+        #expect(metrics.size(for: .expanded).width == 820)
+        #expect(metrics.size(for: .expanded).height == metrics.expandedChromeHeight + 500)
     }
 
     @Test("高度单调不减：idle ≤ running < notice < expanded")
@@ -199,13 +197,33 @@ struct IslandMetricsTests {
         }
     }
 
-    @Test("窗口比岛主体左右各宽出一个内凹半径，圆弧才不会被切掉")
+    @Test("窗口比岛能长到的最大宽度左右各再宽出一个内凹半径，圆弧才不会被切掉")
     func containerLeavesRoomForInvertedArcs() {
-        let notched = IslandMetrics(geometry: FakeScreenGeometry.macBook14)
-        #expect(notched.containerFrame.width == notched.size(for: .expanded).width + 16)
+        for (name, geometry) in allGeometries {
+            let metrics = IslandMetrics(geometry: geometry)
+            #expect(metrics.containerFrame.width == metrics.maxExpandedSize.width + 16, "\(name)")
+        }
+    }
 
-        let flat = IslandMetrics(geometry: FakeScreenGeometry.noNotch)
-        #expect(flat.containerFrame.width == flat.size(for: .expanded).width + 16)
+    @Test("面板尺寸与当前拖拽尺寸无关 —— 拖动时窗口一动不动，才不会闪")
+    func containerIsIndependentOfCurrentSize() {
+        let geometry = FakeScreenGeometry.macBook14
+        let small = IslandMetrics(geometry: geometry, expandedWidth: 420, expandedContentHeight: 160)
+        let large = IslandMetrics(geometry: geometry, expandedWidth: 900, expandedContentHeight: 600)
+        #expect(small.containerFrame == large.containerFrame)
+    }
+
+    @Test("面板放得下拖到最大的岛")
+    func containerFitsMaximumDrag() {
+        for (name, geometry) in allGeometries {
+            let metrics = IslandMetrics(geometry: geometry)
+            let maxed = IslandMetrics(geometry: geometry,
+                                      expandedWidth: metrics.expandedWidthRange.upperBound,
+                                      expandedContentHeight: metrics.expandedContentHeightRange.upperBound)
+            let size = maxed.size(for: .expanded)
+            #expect(size.width <= metrics.containerFrame.width, "\(name)")
+            #expect(size.height <= metrics.containerFrame.height, "\(name)")
+        }
     }
 
     @Test("窗口容得下最大态，任何状态都不会溢出")

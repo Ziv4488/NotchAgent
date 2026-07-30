@@ -89,7 +89,7 @@ struct UsageBar: View {
 #Preview {
     VStack(spacing: 6) {
         UsageBar(usage: SessionUsage(contextUsed: 0.42, fiveHourUsed: 0.31,
-                                     weeklyUsed: 0.12, mode: .normal, subagents: 2))
+                                     weeklyUsed: 0.12, mode: .manual, subagents: 2))
         UsageBar(usage: SessionUsage(contextUsed: 0.88, fiveHourUsed: 0.93,
                                      weeklyUsed: 0.64, mode: .plan, subagents: 0))
     }

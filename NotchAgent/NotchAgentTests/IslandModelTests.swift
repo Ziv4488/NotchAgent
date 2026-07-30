@@ -76,12 +76,25 @@ struct IslandModelTests {
         #expect(calls == 1)
     }
 
-    @Test("拖大后岛的尺寸和窗口 frame 一起跟上")
-    func resizeFlowsIntoMetrics() {
+    @Test("拖大后岛的尺寸跟上，但承载它的面板一动不动")
+    func resizeFlowsIntoIslandButNotPanel() {
         let m = model()
+        let panel = m.metrics.containerFrame
         m.resizeExpanded(width: 700, contentHeight: 420)
         #expect(m.metrics.size(for: .expanded).width == 700)
-        #expect(m.metrics.containerFrame.width == 700 + m.constants.invertedCornerRadius * 2)
+        // 面板跟着变就会看见一帧错位，那正是拖动闪烁的来源。
+        #expect(m.metrics.containerFrame == panel)
+    }
+
+    @Test("岛主体的四条边按当前尺寸算，拖拽手柄靠它做绝对定位")
+    func expandedEdgesTrackCurrentSize() {
+        let m = model()
+        let screen = m.geometry.screenFrame
+        m.resizeExpanded(width: 700, contentHeight: 420)
+        let edges = m.expandedEdges
+        #expect(edges.centerX == screen.midX)
+        #expect(edges.topY == screen.maxY)
+        #expect(edges.topY - edges.bottomY == m.metrics.size(for: .expanded).height)
     }
 
     @Test("可拖范围的下限放得下终端，上限留得住桌面")
@@ -99,8 +112,7 @@ struct IslandModelTests {
     func cycleModeWrapsAround() {
         let m = model()
         m.debugStartSession(named: "a")
-        let start = m.selectedTab?.usage.mode
-        #expect(start == .normal)
+        #expect(m.selectedTab?.usage.mode == .manual)
 
         var seen: [SessionUsage.Mode] = []
         for _ in SessionUsage.Mode.allCases {
@@ -108,7 +120,14 @@ struct IslandModelTests {
             seen.append(m.selectedTab!.usage.mode)
         }
         #expect(Set(seen).count == SessionUsage.Mode.allCases.count)
-        #expect(seen.last == .normal)
+        #expect(seen.last == .manual)
+    }
+
+    @Test("模式档位与 Claude Code 自己的选单一致，不翻译")
+    func modesMatchClaudeCode() {
+        // 岛显示的档位必须和用户在终端里看到的是同一个词。
+        #expect(SessionUsage.Mode.allCases.map(\.label)
+                == ["Manual", "Accept edits", "Plan", "Auto"])
     }
 
     @Test("一个会话都没有时轮换模式不炸")
@@ -116,6 +135,29 @@ struct IslandModelTests {
         let m = model()
         m.cycleMode()
         #expect(m.tabs.isEmpty)
+    }
+
+    // MARK: - 中断
+
+    @Test("按停止：会话停下，但不标未读 —— 人就在跟前看着，不该再催他")
+    func interruptStopsWithoutNagging() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        m.send(.click)
+        m.interruptSelectedTask()
+        #expect(m.tabs[0].status == .done)
+        #expect(m.tabs[0].unread == false)
+        #expect(m.state == .expanded)   // 自己按的停止，不该把岛收掉
+    }
+
+    @Test("没在跑的会话按停止是空操作")
+    func interruptIgnoresIdleSession() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        m.debugFinishOldestRunning()
+        let before = m.tabs
+        m.interruptSelectedTask()
+        #expect(m.tabs == before)
     }
 
     // MARK: - 状态带左右分区

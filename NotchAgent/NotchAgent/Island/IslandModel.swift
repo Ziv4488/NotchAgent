@@ -21,25 +21,29 @@ struct SessionUsage: Equatable {
     /// 周额度已用比例 0...1。
     var weeklyUsed: Double = 0
     /// 当前权限模式。
-    var mode: Mode = .normal
+    var mode: Mode = .manual
     /// 正在跑的子代理数量。
     var subagents: Int = 0
 
-    /// 对应 Claude Code 的四档权限模式，⇧Tab 依次轮换。
+    /// Claude Code 的四档权限模式，⇧Tab 依次轮换。
+    ///
+    /// 名称与顺序照抄 Claude Code 自己的模式选单（Manual / Accept edits / Plan / Auto），
+    /// **不翻译** —— 岛显示的档位必须和用户在终端里看到的是同一个词，
+    /// 否则「我现在到底在哪个模式」这件最要紧的事会对不上。
     enum Mode: CaseIterable, Equatable {
-        case normal, plan, acceptEdits, bypass
+        case manual, acceptEdits, plan, auto
 
         var label: String {
             switch self {
-            case .normal: "默认"
+            case .manual: "Manual"
+            case .acceptEdits: "Accept edits"
             case .plan: "Plan"
-            case .acceptEdits: "自动接受"
-            case .bypass: "跳过确认"
+            case .auto: "Auto"
             }
         }
 
-        /// 默认模式之外都要看得见 —— 用户得知道自己现在在什么模式下按回车。
-        var isDefault: Bool { self == .normal }
+        /// Manual 之外都要看得见 —— 用户得知道自己现在在什么模式下按回车。
+        var isDefault: Bool { self == .manual }
     }
 }
 
@@ -178,20 +182,15 @@ final class IslandModel {
 
     // MARK: - 展开态拖拽调整尺寸
 
-    /// 尺寸变了要通知窗口层重设 frame —— 面板本身也得跟着长大，否则岛会被切掉。
+    /// 尺寸落定的通知。面板不需要跟着改（见 `IslandMetrics.containerFrame`），
+    /// 第 2 阶段用它把尺寸写进 Application Support。
     var onExpandedSizeChanged: (() -> Void)?
 
-    /// 太窄终端排不下字，太宽就把整个桌面盖住了。
-    var expandedWidthRange: ClosedRange<CGFloat> {
-        420...max(420, geometry.screenFrame.width - 160)
-    }
+    var expandedWidthRange: ClosedRange<CGFloat> { metrics.expandedWidthRange }
+    var expandedContentHeightRange: ClosedRange<CGFloat> { metrics.expandedContentHeightRange }
 
-    var expandedContentHeightRange: ClosedRange<CGFloat> {
-        let ceiling = geometry.screenFrame.height * 0.85 - metrics.expandedChromeHeight
-        return 160...max(160, ceiling)
-    }
-
-    /// 拖拽手柄调用。宽度是从中线两侧对称长的，调用方已经把位移乘过 2。
+    /// 拖拽手柄调用。传的是**目标绝对尺寸**，不是增量 ——
+    /// 手柄自己会随岛一起移动，用增量累加必然漂。
     func resizeExpanded(width: CGFloat, contentHeight: CGFloat) {
         let w = width.clamped(to: expandedWidthRange)
         let h = contentHeight.clamped(to: expandedContentHeightRange)
@@ -199,6 +198,12 @@ final class IslandModel {
         expandedWidth = w
         expandedContentHeight = h
         onExpandedSizeChanged?()
+    }
+
+    /// 岛主体当前的四条边在屏幕坐标里的位置（原点左下）。拖拽手柄靠它做绝对定位。
+    var expandedEdges: (centerX: CGFloat, topY: CGFloat, bottomY: CGFloat) {
+        let top = geometry.screenTopY
+        return (geometry.islandCenterX, top, top - metrics.size(for: .expanded).height)
     }
 
     // MARK: - 模式
@@ -210,6 +215,17 @@ final class IslandModel {
         let all = SessionUsage.Mode.allCases
         let current = all.firstIndex(of: tabs[index].usage.mode) ?? 0
         tabs[index].usage.mode = all[(current + 1) % all.count]
+    }
+
+    /// 中断当前会话。第 2 阶段这里改成给 PTY 发 Esc / SIGINT。
+    func interruptSelectedTask() {
+        guard let id = selectedTab?.id,
+              let index = tabs.firstIndex(where: { $0.id == id }),
+              tabs[index].status == .running else { return }
+        tabs[index].status = .done
+        // 是用户自己按的停止，人就在跟前看着，不该再标成未读去催他。
+        tabs[index].unread = false
+        send(.sessionStopped)
     }
 
     func selectTab(_ id: UUID) {
@@ -248,7 +264,7 @@ final class IslandModel {
         let tab = IslandTab(title: name, kind: .cli, status: .running,
                             accent: Color(red: 0.85, green: 0.47, blue: 0.34),
                             usage: SessionUsage(contextUsed: 0.42, fiveHourUsed: 0.31,
-                                                weeklyUsed: 0.12, mode: .normal, subagents: 2))
+                                                weeklyUsed: 0.12, mode: .manual, subagents: 2))
         tabs.append(tab)
         if selectedTabID == nil { selectedTabID = tab.id }
         send(.sessionStarted)
