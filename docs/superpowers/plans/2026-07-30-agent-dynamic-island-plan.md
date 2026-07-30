@@ -307,6 +307,25 @@ socket 路径放 `~/Library/Application Support/NotchAgent/hooks.sock`，启动�
 
 **第 2 阶段完成标准（= 第一期交付）**：能完全脱离终端启动和操作 Claude Code 任务，交互与终端一致，收起态能看进度，完成有提醒。
 
+### 第 2 阶段实现结果（2026-07-31）
+
+自动化：168 个测试 / 17 个套件全过；`scripts/smoke.sh` 用真实 `claude` 端到端验过。
+
+**照计划做的**：2.1 ClaudeLocator、2.2 SessionKit、2.3 CLISession、2.4 HookBridge、2.5 StatusFeed、2.7 接线、2.8 冒烟脚本。
+
+**偏离计划的六处，都记在 spec 对应小节**：
+
+| 处 | 计划 | 实际 | 为什么 |
+|---|---|---|---|
+| 2.4 转发端 | bundle 里放一个 `hook-forward` 小程序 | 用系统的 `/usr/bin/nc -U -w 1` | 省掉一个 Xcode target 和一条拷贝构建阶段。**不能加 `-N`** —— 这版 nc 一见它就报错退出，且退得飞快，只看耗时会误判成成功 |
+| 2.4 监听端 | 未指定 | 裸 BSD socket，不用 `NWListener` | Network.framework 的 AF_UNIX 监听被系统拒（`SO_NECP_LISTENUUID failed [22]`），建得起来但收不到连接 |
+| 2.4 绑定 | 按 `session_id` | spawn 时注入 `NOTCH_TAB`，转发时作为第一行发出 | `session_id` 在 `SessionStart` 之前无从得知。环境变量能穿透到 hook 命令（已实测） |
+| 2.6 ProjectRegistry | 新写 | **复用第 1 阶段已有的 `ProjectDirectoryStore`** | 扫描、路径还原、排序、上限都已经在了 |
+| 3.2 输入框 | 展开态底部常驻输入框 | **有活会话时不绘制**，键盘直接归终端 | spec 5.2 要求授权只在 PTY 里发生。焦点不在终端上，`1/2/3`、⇧Tab、`Esc`、斜杠命令全废 |
+| 用量三项 | 「走 `/usage` 或 statusline」 | 上下文读 transcript、5h/周 读 `~/.claude.json` 缓存、子代理数 `Task` 工具配对 | 见 spec 5.2b。拿不到时显示横线而不是 0% |
+
+**已知欠账**：`~/.claude.json` 里那份限额缓存只在 Claude Code 自己需要时刷新，实测常常是几天前的，于是 5h/周 多数时候显示横线。实时值要拿钥匙串里的 OAuth token 打接口 —— 涉及读用户凭据和代发网络请求，等用户拍板。
+
 ---
 
 ## 第 3 阶段 · 第三方 app 贴附（第二期交付）

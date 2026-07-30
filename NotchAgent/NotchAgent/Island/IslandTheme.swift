@@ -35,6 +35,9 @@ enum IslandTheme {
 
     // 字号
     static let bandFont = Font.system(size: 11, weight: .medium)
+    /// 同一个字体的 AppKit 形态。状态带的文案要**先量宽度再截断**
+    /// （见 `StatusFeed.activity`），而 SwiftUI 的 `Font` 量不了。两者必须一致。
+    static let bandNSFont = NSFont.systemFont(ofSize: 11, weight: .medium)
     static let tabFont = Font.system(size: 11, weight: .medium)
     static let bodyFont = Font.system(size: 11, design: .monospaced)
     static let inputFont = Font.system(size: 12)

@@ -10,6 +10,8 @@ import AppKit
 
 struct NewTaskForm: View {
     let projects: [ProjectDirectory]
+    /// 上一次起会话失败的原因（找不到 `claude` 之类）。表单原地留着，把话说清楚。
+    var error: String?
     var onSubmit: (ProjectDirectory, String) -> Void
     var onCancel: () -> Void
 
@@ -23,6 +25,18 @@ struct NewTaskForm: View {
                 empty
             } else {
                 list
+            }
+            if let error {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9))
+                    Text(error).lineLimit(2)
+                }
+                .font(IslandTheme.bodyFont)
+                .foregroundStyle(IslandTheme.stop)
+                .padding(.horizontal, 10)
+                .padding(.top, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider().overlay(IslandTheme.panelStroke)
             instructionField

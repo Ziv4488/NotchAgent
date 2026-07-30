@@ -69,21 +69,29 @@ struct IslandShell: View {
             if model.state == .expanded {
                 if model.showsNewTaskForm {
                     NewTaskForm(projects: model.projects,
-                                onSubmit: model.startTask(in:instruction:),
+                                error: model.launchError,
+                                onSubmit: { model.startTask(in: $0, instruction: $1) },
                                 onCancel: model.cancelNewTask)
                         .transition(.opacity)
                 } else {
-                    ContentArea(tab: model.selectedTab)
+                    ContentArea(model: model, tab: model.selectedTab)
                         .transition(.opacity)
                     // app tab 的内容区、用量条和输入框整体不绘制，
                     // 真实窗口贴在下面，额度也不归我们管（spec 3.2）。
                     if model.selectedTab?.kind != .app {
                         UsageBar(usage: model.selectedTab?.usage ?? SessionUsage(),
-                                 onCycleMode: model.cycleMode)
-                            .transition(.opacity)
-                        InputBar(isRunning: model.selectedTab?.status == .running,
+                                 isRunning: model.selectedTab?.status == .running,
+                                 onCycleMode: model.cycleMode,
                                  onStop: model.interruptSelectedTask)
                             .transition(.opacity)
+                        // 会话活着的时候键盘直接归终端（见 TerminalPane），
+                        // 再摞一个输入框就是两个光标抢一份键入，只在没有活进程时才画它。
+                        if !model.selectedTabHasLiveTerminal {
+                            InputBar(isRunning: false,
+                                     onSubmit: model.submitToSelected,
+                                     onStop: model.interruptSelectedTask)
+                                .transition(.opacity)
+                        }
                     }
                 }
             }

@@ -14,12 +14,13 @@ import Observation
 /// 第 1 阶段是假数据。第 2 阶段由 Claude Code 侧喂进来：额度三项走 `/usage`
 /// 或 statusline，mode 与 subagent 走 hook —— 换数据源时只动填充方，不动这个结构。
 struct SessionUsage: Equatable {
-    /// 上下文窗口已用比例 0...1。
-    var contextUsed: Double = 0
-    /// 5 小时滚动窗口已用比例 0...1。
-    var fiveHourUsed: Double = 0
-    /// 周额度已用比例 0...1。
-    var weeklyUsed: Double = 0
+    /// 上下文窗口已用比例 0...1。**nil = 不知道**，界面画一条横线。
+    /// 用 0 顶替是错的：「没用」和「不知道」是两件事。
+    var contextUsed: Double?
+    /// 5 小时滚动窗口已用比例 0...1。nil = 拿不到或数据已过期。
+    var fiveHourUsed: Double?
+    /// 周额度已用比例 0...1。nil 同上。
+    var weeklyUsed: Double?
     /// 当前权限模式。
     var mode: Mode = .manual
     /// 正在跑的子代理数量。
@@ -65,6 +66,19 @@ struct IslandTab: Identifiable, Equatable {
         case done
         /// 会话已结束。
         case ended
+
+        /// 会话层的状态收敛到岛上的四种。
+        ///
+        /// `.starting` 归到 `.running`：从用户角度「已经在跑了」，
+        /// 为「正在启动」单独做一种视觉，换来的信息量不值那个复杂度。
+        init(_ status: SessionStatus) {
+            switch status {
+            case .starting, .running: self = .running
+            case .waiting: self = .waiting
+            case .idle: self = .done
+            case .finished, .failed: self = .ended
+            }
+        }
     }
 
     let id: UUID
@@ -78,10 +92,18 @@ struct IslandTab: Identifiable, Equatable {
     /// 本轮开始的时刻，状态带右侧的计时从这里算。
     var startedAt: Date
     var usage: SessionUsage
+    /// 工作目录。重启恢复和「继续上次会话」都要它。
+    var directory: String?
+    /// 收起态状态带上那行字：「读 session.ts」。由 hook 事件驱动，
+    /// 没有事件时是 nil，状态带退回显示项目名。
+    var activity: String?
+    /// 进程已经退出（正常或异常），只能「继续上次会话」重开。
+    var isDetached: Bool
 
     init(id: UUID = UUID(), title: String, kind: Kind, status: Status,
          unread: Bool = false, accent: Color,
-         startedAt: Date = .now, usage: SessionUsage = SessionUsage()) {
+         startedAt: Date = .now, usage: SessionUsage = SessionUsage(),
+         directory: String? = nil, activity: String? = nil, isDetached: Bool = false) {
         self.id = id
         self.title = title
         self.kind = kind
@@ -90,6 +112,9 @@ struct IslandTab: Identifiable, Equatable {
         self.accent = accent
         self.startedAt = startedAt
         self.usage = usage
+        self.directory = directory
+        self.activity = activity
+        self.isDetached = isDetached
     }
 }
 
@@ -133,6 +158,16 @@ final class IslandModel {
 
     var selectedTab: IslandTab? {
         tabs.first { $0.id == selectedTabID } ?? tabs.first
+    }
+
+    /// 选中的 tab 背后有没有一个活着的终端。
+    ///
+    /// 有的话键盘归终端，岛不再画自己的输入框。岛的总高度**不跟着变** ——
+    /// 输入框那 44pt 由内容区吸收（它是 `maxHeight: .infinity`），
+    /// 否则会话一结束岛就抽搐一下变高，比多 44pt 留白难受得多。
+    var selectedTabHasLiveTerminal: Bool {
+        guard let id = selectedTab?.id, let session = runtime?.session(id) else { return false }
+        return session.status.isAlive
     }
 
     /// 状态带右侧计时跟着谁：选中的那个在跑就用它，否则用最早开始的那个。
@@ -197,6 +232,7 @@ final class IslandModel {
         guard w != expandedWidth || h != expandedContentHeight else { return }
         expandedWidth = w
         expandedContentHeight = h
+        runtime?.preferences.expandedSize = (w, h)
         onExpandedSizeChanged?()
     }
 
@@ -209,20 +245,33 @@ final class IslandModel {
     // MARK: - 模式
 
     /// ⇧Tab 轮换当前会话的权限模式。
+    ///
+    /// 有真实会话时**不自己改状态**，只把 ⇧Tab 原样送进 PTY，
+    /// 等 hook payload 里的 `permission_mode` 回来再更新显示 ——
+    /// 岛猜一个模式、CLI 里其实是另一个，是最坏的一种不一致。
     func cycleMode() {
         guard let id = selectedTab?.id,
               let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+
+        if let runtime, runtime.session(id) != nil {
+            // CSI Z —— 终端里 ⇧Tab 的转义序列。
+            runtime.write("\u{1b}[Z", to: id)
+            return
+        }
+
         let all = SessionUsage.Mode.allCases
         let current = all.firstIndex(of: tabs[index].usage.mode) ?? 0
         tabs[index].usage.mode = all[(current + 1) % all.count]
     }
 
-    /// 中断当前会话。第 2 阶段这里改成给 PTY 发 Esc / SIGINT。
+    /// 中断当前会话：给 PTY 发 `Esc`，和在终端里按 Esc 完全一样。
     func interruptSelectedTask() {
         guard let id = selectedTab?.id,
               let index = tabs.firstIndex(where: { $0.id == id }),
               tabs[index].status == .running else { return }
+        runtime?.interrupt(id)
         tabs[index].status = .done
+        tabs[index].activity = nil
         // 是用户自己按的停止，人就在跟前看着，不该再标成未读去催他。
         tabs[index].unread = false
         send(.sessionStopped)
@@ -249,12 +298,194 @@ final class IslandModel {
         isComposingNewTask = false
     }
 
-    /// 第 1 阶段先造个假会话把流程跑通；第 2 阶段这里换成真的起 `claude`。
-    func startTask(in project: ProjectDirectory, instruction: String) {
-        _ = instruction
+    /// 真的起一个 `claude`。
+    ///
+    /// 起不来时**不建 tab**，只把错误挂出去 —— 建一个永远不会有内容的空 tab
+    /// 比什么都不建更糟：用户会以为它在跑。
+    func startTask(in project: ProjectDirectory, instruction: String, resume: Bool = false) {
+        guard let runtime else {
+            // 没有 runtime 只会出现在预览和单元测试里。
+            isComposingNewTask = false
+            debugStartSession(named: project.name)
+            selectedTabID = tabs.last?.id
+            return
+        }
+
+        let id = UUID()
+        do {
+            try runtime.launch(id: id, title: project.name,
+                               directory: URL(fileURLWithPath: project.path),
+                               instruction: instruction.isEmpty ? nil : instruction,
+                               resume: resume)
+        } catch {
+            launchError = error.localizedDescription
+            return
+        }
+
         isComposingNewTask = false
-        debugStartSession(named: project.name)
-        selectedTabID = tabs.last?.id
+        launchError = nil
+        let tab = IslandTab(id: id, title: project.name, kind: .cli, status: .running,
+                            accent: Self.accent(for: project.path),
+                            directory: project.path, activity: "启动中")
+        tabs.append(tab)
+        selectedTabID = id
+        send(.sessionStarted)
+        persistTabs()
+    }
+
+    /// tab 图标底色按目录路径散列，同一个项目每次都是同一个颜色。
+    static func accent(for seed: String) -> Color {
+        let palette: [Color] = [
+            Color(red: 0.85, green: 0.47, blue: 0.34),
+            Color(red: 0.06, green: 0.64, blue: 0.50),
+            Color(red: 0.36, green: 0.52, blue: 0.94),
+            Color(red: 0.78, green: 0.40, blue: 0.78),
+            Color(red: 0.90, green: 0.68, blue: 0.24),
+        ]
+        let hash = seed.unicodeScalars.reduce(into: 5381) { partial, scalar in
+            partial = (partial &* 33) &+ Int(scalar.value)
+        }
+        return palette[abs(hash) % palette.count]
+    }
+
+    // MARK: - 真实会话（第 2 阶段）
+
+    /// 会话层。预览与单元测试里是 nil，那时岛退回第 1 阶段的假数据行为。
+    var runtime: SessionRuntime?
+    /// 起不来时给用户看的话（找不到 `claude`、目录没权限之类）。
+    var launchError: String?
+
+    func attach(runtime: SessionRuntime) {
+        self.runtime = runtime
+        runtime.onSignal = { [weak self] id, signal in self?.apply(signal, to: id) }
+        runtime.onStatusChanged = { [weak self] id, status in self?.apply(status, to: id) }
+        if let size = runtime.preferences.expandedSize {
+            expandedWidth = size.width.clamped(to: expandedWidthRange)
+            expandedContentHeight = size.contentHeight.clamped(to: expandedContentHeightRange)
+        }
+        restoreTabs()
+    }
+
+    /// hook 事件的结果落到 tab 上。
+    func apply(_ signal: SessionSignal, to id: SessionID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+
+        if let activity = signal.activity { tabs[index].activity = activity }
+        if let mode = signal.mode { tabs[index].usage.mode = mode }
+        if signal.subagentDelta != 0 {
+            tabs[index].usage.subagents = max(0, tabs[index].usage.subagents + signal.subagentDelta)
+        }
+        if let path = signal.transcriptPath { transcriptPaths[id] = path }
+        refreshUsage(of: index)
+
+        if let status = signal.status {
+            let mapped = IslandTab.Status(status)
+            // 一轮开始就重置计时。状态带右边显示的是「这一轮跑了多久」，
+            // 不是「这个 tab 开了多久」—— 后者对判断要不要去看它没有用。
+            if mapped == .running, tabs[index].status != .running {
+                tabs[index].startedAt = .now
+            }
+            tabs[index].status = mapped
+        }
+
+        // 已经在看着这个 tab 就别再标未读 —— 人就在跟前，催他是噪音。
+        if signal.demandsAttention {
+            let watching = state == .expanded && selectedTabID == id
+            if !watching { tabs[index].unread = true }
+        }
+
+        send(signal.demandsAttention ? .sessionStopped : .sessionProgress)
+    }
+
+    /// 进程本身的状态（退出、崩溃）落到 tab 上。
+    func apply(_ status: SessionStatus, to id: SessionID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        switch status {
+        case .finished, .failed:
+            tabs[index].status = .ended
+            tabs[index].isDetached = true
+            tabs[index].activity = nil
+            if case .failed(let reason) = status { tabs[index].activity = reason }
+            send(.sessionStopped)
+            persistTabs()
+        default:
+            tabs[index].status = IslandTab.Status(status)
+        }
+    }
+
+    // MARK: - 用量三项（真实来源见 UsageProbe）
+
+    private var transcriptPaths: [UUID: String] = [:]
+    private var cachedLimits: (value: UsageProbe.Limits?, at: Date)?
+
+    /// 刷新上下文占用与账号限额。
+    ///
+    /// 每条 hook 事件都会调到这里，而 `PostToolUse` 是很密的 ——
+    /// 所以限额那份（要读一个可能上兆的 `~/.claude.json`）带 60 秒缓存。
+    /// 上下文那份只读 transcript 的尾部、从后往前扫到第一条就停，够便宜。
+    private func refreshUsage(of index: Int) {
+        if let path = transcriptPaths[tabs[index].id] {
+            tabs[index].usage.contextUsed = UsageProbe.contextRatio(transcriptPath: path)
+        }
+
+        let now = Date()
+        if cachedLimits == nil || now.timeIntervalSince(cachedLimits!.at) > 60 {
+            cachedLimits = (UsageProbe.fresh(UsageProbe.limits(), now: now), now)
+        }
+        tabs[index].usage.fiveHourUsed = cachedLimits?.value?.fiveHour
+        tabs[index].usage.weeklyUsed = cachedLimits?.value?.weekly
+    }
+
+    /// 输入框回车 / 终端外的追问，写进 PTY。
+    func submitToSelected(_ text: String) {
+        guard let id = selectedTabID, let runtime else { return }
+        runtime.write(text + "\r", to: id)
+    }
+
+    /// 关掉一个 tab：终止进程、移除、必要时回落状态。
+    func closeTab(_ id: UUID) {
+        runtime?.close(id)
+        tabs.removeAll { $0.id == id }
+        if selectedTabID == id { selectedTabID = tabs.first?.id }
+        persistTabs()
+        send(tabs.isEmpty ? .lastSessionEnded : .sessionStopped)
+    }
+
+    /// 对一个已经结束的会话「继续上次会话」→ `claude --resume`。
+    func resumeTab(_ id: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }),
+              let directory = tabs[index].directory, let runtime else { return }
+        let title = tabs[index].title
+        tabs.remove(at: index)
+        runtime.close(id)
+        startTask(in: ProjectDirectory(path: directory, lastUsed: .now, hasSessions: true),
+                  instruction: "", resume: true)
+        // startTask 用项目名当标题，这里把用户看惯的标题接回去。
+        if let last = tabs.indices.last { tabs[last].title = title }
+    }
+
+    // MARK: - 持久化（spec 7）
+
+    /// 只存骨架。会话内容归 `~/.claude`，岛不复制一份。
+    func persistTabs() {
+        guard runtime != nil else { return }
+        TabStore.save(tabs.filter { $0.kind == .cli }.map {
+            TabSnapshot(id: $0.id, title: $0.title, directory: $0.directory,
+                        claudeSessionID: runtime?.session($0.id)?.claudeSessionID)
+        })
+    }
+
+    /// 重启后把 tab 摆回来，但**不自动重开进程** ——
+    /// 开机就悄悄拉起五个 `claude` 是用户没要求过的事。显示成「已结束 · 可继续」。
+    private func restoreTabs() {
+        let snapshots = TabStore.load()
+        guard !snapshots.isEmpty, tabs.isEmpty else { return }
+        tabs = snapshots.map {
+            IslandTab(id: $0.id, title: $0.title, kind: .cli, status: .ended,
+                      accent: Self.accent(for: $0.directory ?? $0.title),
+                      directory: $0.directory, isDetached: true)
+        }
+        selectedTabID = tabs.first?.id
     }
 
     // MARK: - 第 1 阶段的调试入口

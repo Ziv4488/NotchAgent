@@ -1,0 +1,15 @@
+{
+  "session_id": "c8c771f8-7b01-4a90-a21a-d518267d5e94",
+  "transcript_path": "/Users/ziv/.claude/projects/-Users-ziv-Desktop-Vibe-Agent---/c8c771f8-7b01-4a90-a21a-d518267d5e94.jsonl",
+  "cwd": "/Users/ziv/Desktop/Vibe/Agent灵动岛",
+  "prompt_id": "67aab920-6bdf-46bc-a571-3a8cfdc805b1",
+  "permission_mode": "default",
+  "effort": {
+    "level": "high"
+  },
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "`##`",
+  "background_tasks": [],
+  "session_crons": []
+}

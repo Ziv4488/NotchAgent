@@ -130,13 +130,19 @@ protocol AgentSession: AnyObject, Identifiable {
     var id: SessionID { get }
     var title: String { get }
     var workingDirectory: URL? { get }
-    var status: SessionStatus { get }        // .starting .running .waiting .finished(Int32) .failed
+    var status: SessionStatus { get }        // .starting .running .waiting .idle .finished(Int32) .failed
     func start() throws
     func write(_ text: String)               // CLI: 写入 PTY；App: 无操作
     func resize(cols: Int, rows: Int)        // CLI: PTY 窗口尺寸；App: 无操作
     func terminate()
 }
 ```
+
+`.idle` 是实现时加的第六档：`Stop` hook 表示「这一轮结束」，进程仍然活着。没有它就只能在「还在干活」和「进程已退出」之间二选一，两个都是错的。
+
+**两个 SwiftTerm 的坑，都必须在 `CLISession` 里绕过**：
+- `processTerminated(exitCode:)` 交出来的不是退出码，是 `waitpid` 的**原始状态字**（`exit 3` → 768）。要自己解 `WEXITSTATUS`；被信号杀掉的按 shell 惯例记成 `128 + 信号`。
+- `LocalProcess.terminate()` 发完 SIGTERM 就直接收尾，**一次都不调 delegate**。光等回调的话，被关掉的 tab 会永远停在「运行中」，状态得自己置。
 
 `SessionStore` 持有会话数组，管理 tab 顺序、当前选中 tab、未读标记。
 
@@ -179,6 +185,35 @@ protocol AgentSession: AnyObject, Identifiable {
 `SessionStart` 事件的 payload 含 `cwd`、`session_id`、`source`、`transcript_path`。`transcript_path` 指向该会话的 JSONL 记录，作为 hook 通道失效时的备用状态来源（不在 v1 实现）。
 
 **授权只在 PTY 中发生。** 岛不提供第二套「允许 / 拒绝」按钮，`Notification` 事件仅用于点亮岛、引导用户去看终端。这避免了两套 UI 状态不一致。
+
+**这条约束反过来决定了键盘焦点归谁。** 权限选单要用 `1`/`2`/`3` 回答、模式要用 ⇧Tab 切、中断要用 `Esc`、斜杠命令要用方向键选 —— 全是 TUI 自己在处理的按键。焦点只要不在终端上，这些就全废了。所以：**CLI tab 有活着的会话时，键盘直接归终端视图，岛不绘制自己的输入框**（3.2 里那个输入框只服务于新建流程和已结束的会话）。停止键搬到用量条右端。SwiftTerm 的 `TerminalView` 实现了 `NSTextInputClient`，中文输入法不受影响。
+
+**实测补充（Claude Code 2.1.220，探针 A/A′）**：
+- payload 里带 `permission_mode`（`default` / `acceptEdits` / `plan` / `bypassPermissions`）。原计划是让用户在岛上点模式芯片再想办法喂给 CLI，**方向就此反过来：以 CLI 为准，岛只负责显示**。点芯片和按 ⇧Tab 都只是把 `ESC [ Z` 送进 PTY，岛等事件回来才更新。
+- `Notification` 带 `notification_type`（实测 `permission_prompt`），据此把「在等你批权限」和「闲置提醒」分开 —— 后者不该让岛快闪催人。
+- payload 还有 `effort` / `prompt_id` / `background_tasks` / `session_crons` 等文档未列的字段。**所以解码手写、只取需要的键**，用严格 `Codable` 早晚会被某次升级弄哑。
+- 子代理没有专门的 hook，它就是 `Task` 工具：`PreToolUse` +1、`PostToolUse` −1。
+
+**事件怎么绑回 tab**：`session_id` 是 Claude Code 自己生成的，`SessionStart` 之前无从得知。所以 spawn 时注入 `NOTCH_TAB=<tab id>`，hook 命令会继承（已实测），转发时作为**第一行**发出，JSON 跟在后面。第一行不像 UUID 就当整包都是 JSON，再按 `cwd` 兜底匹配。
+
+**转发端用系统自带的 `/usr/bin/nc`，不带自己的小程序。** 原计划要在 bundle 里放一个 `hook-forward`，那需要多一个 Xcode target 和一条拷贝构建阶段。`nc -U` 一次往返实测 30ms，socket 不存在时 25ms 内失败退出，满足「绝不阻塞 Claude Code」。
+**但绝不能加 `-N`**：手册上它是「stdin EOF 后关写端」，实测这台 macOS 的 nc 一见 `-N` 就报 `invalid tcp adaptive write timeout value` 并以 1 退出，一个字节都发不出去 —— 而且退得飞快，只看耗时会误判成成功。
+
+**监听端用裸 BSD socket，不用 Network.framework。** `NWListener` 配 `requiredLocalEndpoint: .unix(path:)` 会被系统拒（`setsockopt SO_NECP_LISTENUUID failed [22]`），监听建得起来但一个连接都收不到。
+
+### 5.2b 用量三项从哪来
+
+hook payload 里**一个都没有**，三个数字各有各的源头。口径必须和 Claude Code 自己那条 statusline 逐字一致 —— 岛上和终端里差一点点，比不显示更糟：用户会开始怀疑该信哪个。
+
+| 数字 | 来源 | 备注 |
+|---|---|---|
+| 上下文 | `SessionStart` 给的 `transcript_path`，读最后一条 assistant 消息的 `usage`，`input + cache_read + cache_creation` ÷ **200,000** | 分母是自动压缩阈值，**不是**模型的上下文窗口（Opus 5 报 1,000,000）。用后者算出来的数和终端里对不上。只读文件尾部，transcript 会长到几十兆 |
+| 5 小时 / 周 | `~/.claude.json` 的 `cachedUsageUtilization` | Claude Code 自己维护的缓存，不联网、不碰钥匙串 |
+| 子代理 | `Task` 工具的 `PreToolUse` / `PostToolUse` 配对计数 | 没有专门的 hook |
+
+**拿不到就显示一条横线，绝不用 0 顶替。**「额度还没动」和「不知道额度用了多少」是完全相反的两条结论，而用户会照着它决定还能不能接着干活。
+
+`cachedUsageUtilization` 只在 Claude Code 自己需要时才刷新（比如用户开 `/usage`），实测可能是好几天前的，所以**超过 15 分钟就当不知道**。实时值唯一的来源是拿钥匙串里的 OAuth token 打 `api.anthropic.com/api/oauth/usage`；岛不这么做 —— 读用户凭据、代发网络请求，得由用户自己决定。
 
 ### 5.3 终端宽度
 
@@ -226,7 +261,7 @@ v1：任务是 app 的子进程。退出 app 时若有任务在跑，先弹确�
 
 | 数据 | 位置 |
 |---|---|
-| 悬停行为、展开宽度、第三方 app 预设、tab 顺序、`claude` 路径 | `UserDefaults` |
+| 悬停行为、展开尺寸、第三方 app 预设、tab 顺序、`claude` 路径 | `UserDefaults` |
 | tab 骨架（tab 列表及其类型、目录） | Application Support 下一个 JSON |
 | 会话内容 | **不自行存储**，由 `~/.claude` 负责，岛只引用 session id |
 

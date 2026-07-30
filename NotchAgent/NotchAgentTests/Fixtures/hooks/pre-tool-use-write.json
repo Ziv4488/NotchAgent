@@ -1,0 +1,17 @@
+{
+  "session_id": "a05c67e3-6674-4d81-9523-e898c5c541ca",
+  "transcript_path": "/Users/ziv/.claude/projects/-Users-ziv-Desktop-Vibe-Agent---/a05c67e3-6674-4d81-9523-e898c5c541ca.jsonl",
+  "cwd": "/Users/ziv/Desktop/Vibe/Agent灵动岛",
+  "prompt_id": "976b3199-d75b-49dd-b715-ce7fdc5a3ef4",
+  "permission_mode": "default",
+  "effort": {
+    "level": "high"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/tmp/spike-notification/note.txt",
+    "content": "hi\n"
+  },
+  "tool_use_id": "toolu_01CJ7MxpRxFkYYWLbtMko9sS"
+}

@@ -44,8 +44,9 @@ struct StatusBand: View {
         HStack(spacing: 5) {
             if let tab = model.selectedTab {
                 StatusDot(status: tab.status)
-                // 项目名可能很长。让它截断，绝不能挤掉中间给刘海留的空。
-                Text(tab.title)
+                // 在跑的时候显示它在干什么（「读 session.ts」），闲着才显示项目名。
+                // 收起态这一行是唯一的进度窗口，"refactor-auth" 不告诉你任何新信息。
+                Text(tab.status == .running ? (tab.activity ?? tab.title) : tab.title)
                     .foregroundStyle(IslandTheme.dim)
                     .lineLimit(1)
                     .truncationMode(.tail)

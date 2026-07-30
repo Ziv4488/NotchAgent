@@ -22,6 +22,7 @@ struct NotchAgentApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = IslandModel(geometry: ScreenGeometry.main ?? FakeScreenGeometry.macBook14)
+    private let runtime = SessionRuntime()
     private var controller: IslandWindowController?
     private var statusItem: NSStatusItem?
 
@@ -33,11 +34,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installStatusItem()
 
         // 手动测试用：--args -debugState running|notice|expanded|newtask 直接开在某个形态。
-        switch UserDefaults.standard.string(forKey: "debugState") {
-        case "newtask": model.beginNewTask()
-        case let raw?: IslandState(rawValue: raw).map(model.previewState)
-        case nil: break
+        // 这条路走假数据，**不接 runtime** —— 否则一开 app 就会去起真的 claude。
+        if let raw = UserDefaults.standard.string(forKey: "debugState") {
+            if raw == "newtask" {
+                model.beginNewTask()
+            } else {
+                IslandState(rawValue: raw).map(model.previewState)
+            }
+            return
         }
+
+        runtime.start()
+        model.attach(runtime: runtime)
+
+        // 手动测试用：--args -debugTask <目录> 直接在该目录起一个**真**会话并展开，
+        // 免得每次都要走菜单 → 选目录 → 打字。和上面的 -debugState 是两回事：
+        // 那个走假数据不碰 runtime，这个走的是完整的真实链路。
+        if let path = UserDefaults.standard.string(forKey: "debugTask") {
+            let instruction = UserDefaults.standard.string(forKey: "debugPrompt")
+            model.startTask(in: ProjectDirectory(path: path, lastUsed: .now, hasSessions: false),
+                            instruction: instruction ?? "")
+            model.send(.click)
+        }
+    }
+
+    /// 有任务在跑就先问一声（spec 5.4）。
+    ///
+    /// v1 的任务是 app 的子进程，退出 app 就等于把它们全杀了 ——
+    /// 这件事必须问，不能默默做掉。
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard runtime.hasLiveSessions else { return .terminateNow }
+
+        let alert = NSAlert()
+        alert.messageText = "还有任务在跑"
+        alert.informativeText = "退出会终止所有正在运行的 Claude Code 会话。会话记录留在 ~/.claude，下次可以继续。"
+        alert.addButton(withTitle: "退出并终止")
+        alert.addButton(withTitle: "取消")
+        alert.alertStyle = .warning
+        // 岛是 LSUIElement，没有普通窗口，弹框默认可能出现在别的 app 后面。
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        model.persistTabs()
+        runtime.shutdown()
     }
 
     /// 用 NSStatusItem 而不是 SwiftUI 的 MenuBarExtra：菜单内容要从 AppDelegate 直接驱动，

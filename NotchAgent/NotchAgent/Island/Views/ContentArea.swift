@@ -2,13 +2,14 @@
 //  ContentArea.swift
 //  NotchAgent
 //
-//  展开态的内容区。第 2 阶段这里换成 SwiftTerm 的终端视图，
-//  app tab 则整块不绘制、把真实窗口贴在下面。
+//  展开态的内容区：CLI tab 放真实终端，app tab 整块不绘制、
+//  把真实窗口贴在下面（第 3 阶段）。
 //
 
 import SwiftUI
 
 struct ContentArea: View {
+    let model: IslandModel
     let tab: IslandTab?
 
     var body: some View {
@@ -16,47 +17,86 @@ struct ContentArea: View {
             if let tab, tab.kind == .app {
                 // app tab：内容区和输入框整体不绘制，真实窗口贴在 tab 条下方（spec 3.2）。
                 Color.clear
+            } else if let tab, let session = model.runtime?.session(tab.id) {
+                terminal(session)
+            } else if let tab, tab.isDetached {
+                detached(tab)
+            } else if let error = model.launchError {
+                notice(error, symbol: "exclamationmark.triangle")
             } else {
-                transcript
+                notice("这个会话没有活着的进程。", symbol: "moon.zzz")
             }
         }
         // 高度由外层 VStack 分配：状态带 / tab 条 / 输入框都是固定高，剩下的全归内容区。
         .frame(maxHeight: .infinity)
     }
 
-    private var transcript: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            // 第 1 阶段的假数据，照着 states-v2.html 的展开态。
-            line("✓", IslandTheme.green, "Edit ", "auth/session.ts", " +34 −12")
-            line("✓", IslandTheme.green, "Edit ", "auth/token.ts", " +8 −3")
-            line("✓", IslandTheme.green, "Bash ", "", "npm test — 24 passed")
-            Spacer(minLength: 8)
-            Text("session 已拆成独立模块，测试全过。")
-                .foregroundStyle(Color.white.opacity(0.92))
-            Spacer(minLength: 0)
-        }
-        .font(IslandTheme.bodyFont)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(IslandTheme.panelFill)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(IslandTheme.panelStroke, lineWidth: 0.5)
-                }
-        }
-        .padding(.horizontal, 7)
+    private func terminal(_ session: CLISession) -> some View {
+        TerminalPane(session: session)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(IslandTheme.panelFill)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(IslandTheme.panelStroke, lineWidth: 0.5)
+                    }
+            }
+            .padding(.horizontal, 7)
     }
 
-    private func line(_ mark: String, _ markColor: Color,
-                      _ tool: String, _ path: String, _ trailing: String) -> some View {
-        HStack(spacing: 0) {
-            Text(mark).foregroundStyle(markColor)
-            Text("  " + tool).foregroundStyle(Color.white.opacity(0.62))
-            Text(path).foregroundStyle(Color(red: 0.48, green: 0.64, blue: 0.97))
-            Text(trailing).foregroundStyle(Color.white.opacity(0.3))
+    /// 进程已经退出的 tab：会话记录还在 `~/.claude`，可以 `--resume` 接回去。
+    private func detached(_ tab: IslandTab) -> some View {
+        panel {
+            VStack(spacing: 10) {
+                Text(tab.activity ?? "会话已结束。")
+                    .font(IslandTheme.bodyFont)
+                    .foregroundStyle(IslandTheme.dim)
+                Button {
+                    model.resumeTab(tab.id)
+                } label: {
+                    Text("继续上次会话")
+                        .font(IslandTheme.tabFont)
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color.white.opacity(0.14))
+                        }
+                }
+                .buttonStyle(.plain)
+            }
         }
+    }
+
+    private func notice(_ text: String, symbol: String) -> some View {
+        panel {
+            VStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.system(size: 16))
+                    .foregroundStyle(IslandTheme.faint)
+                Text(text)
+                    .font(IslandTheme.bodyFont)
+                    .foregroundStyle(IslandTheme.dim)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 24)
+        }
+    }
+
+    private func panel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(IslandTheme.panelFill)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(IslandTheme.panelStroke, lineWidth: 0.5)
+                    }
+            }
+            .padding(.horizontal, 7)
     }
 }
