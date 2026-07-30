@@ -15,13 +15,14 @@
 | 项 | 决定 |
 |---|---|
 | 工程形态 | Xcode 工程（macOS App），使用文件系统同步组，新增 `.swift` 文件无需改 `.pbxproj` |
-| Bundle ID | `com.ziv.notchagent`（一旦确定不再更改 —— 辅助功能权限绑定它） |
-| 签名 | 固定使用同一个开发签名。**不要用 ad-hoc**，否则每次重建都会丢辅助功能授权 |
+| Bundle ID | `com.ziv.NotchAgent`（一旦确定不再更改 —— 辅助功能权限绑定它） |
+| 签名 | Personal Team 的开发签名，自动管理。**不要用 ad-hoc / Sign to Run Locally**，签名摘要每次构建都变，会导致辅助功能授权反复失效 |
+| 测试系统 | Swift Testing |
 | 沙盒 | 关闭（需起子进程 + 辅助功能 API） |
 | 最低系统 | macOS 14 |
 | 依赖 | SwiftTerm（SPM） |
-| 构建命令 | `xcodebuild -project NotchAgent.xcodeproj -scheme NotchAgent -configuration Debug build` |
-| 测试命令 | `xcodebuild test -project NotchAgent.xcodeproj -scheme NotchAgent -destination 'platform=macOS'` |
+| 构建命令 | `xcodebuild -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -configuration Debug build` |
+| 测试命令 | `xcodebuild test -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -destination 'platform=macOS'` |
 
 目录结构：
 
