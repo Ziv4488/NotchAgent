@@ -38,7 +38,10 @@ struct NewTaskForm: View {
         .padding(.horizontal, 7)
         .onAppear {
             selected = projects.first
+            // 抢两次：NSApp.activate() 是异步的，onAppear 时窗口可能还没成为 key，
+            // app 激活后 AppKit 会把 first responder 恢复成它记着的上一个，把这里顶掉。
             instructionFocused = true
+            Task { @MainActor in instructionFocused = true }
         }
     }
 

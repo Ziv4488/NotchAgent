@@ -24,7 +24,7 @@ struct InputBar: View {
                 .foregroundStyle(IslandTheme.bright)
                 // 展开就该能直接打字，不该还要再点一下（测试 2.1）。
                 .focused($focused)
-                .onAppear { focused = true }
+                .onAppear { claimFocus() }
                 .onSubmit(send)
 
             actionButton
@@ -59,6 +59,17 @@ struct InputBar: View {
         .buttonStyle(.plain)
         // 第 2 阶段这里改成给 PTY 发 Esc / SIGINT，和终端里按 Esc 等效。
         .help(isRunning ? "停止" : "发送")
+    }
+
+    /// 抢两次焦点，不是一次。
+    ///
+    /// `takeFocus()` 里的 `NSApp.activate()` 是**异步**的：这个视图 onAppear 时窗口
+    /// 很可能还没真的成为 key。而 app 一旦激活，AppKit 会把 first responder 恢复成
+    /// 它记着的上一个，把这里刚设的焦点顶掉 —— 表现就是「展开了但没有光标，得再点一下」。
+    /// 下一轮 runloop 再要一次，那时窗口已经稳定。
+    private func claimFocus() {
+        focused = true
+        Task { @MainActor in focused = true }
     }
 
     private func send() {

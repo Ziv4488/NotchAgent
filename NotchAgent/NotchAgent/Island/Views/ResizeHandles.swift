@@ -18,6 +18,9 @@ struct ResizeHandles: View {
     var body: some View {
         Color.clear
             .frame(width: islandSize.width, height: islandSize.height)
+            // 这层底座只用来量出岛的尺寸好让手柄贴边排。**必须显式放行点击**——
+            // Color.clear 在 SwiftUI 里是吃点击的，而这整块正压在输入框和 tab 条上面。
+            .allowsHitTesting(false)
             // 左右两条竖边。上一版只有下角能拖，用户得摸到那个「微妙的位置」才有反应；
             // 谁调整窗口都是去抓侧边，这里必须有。
             .overlay(alignment: .leading) { verticalEdge }
