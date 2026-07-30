@@ -25,14 +25,20 @@ struct StatusBand: View {
 
     @ViewBuilder
     private var leading: some View {
-        if model.state != .idle, let tab = model.selectedTab {
+        if model.state != .idle {
             HStack(spacing: 5) {
-                StatusDot(status: tab.status)
-                // 项目名可能很长。让它截断，绝不能挤掉中间给刘海留的空。
-                Text(tab.title)
-                    .foregroundStyle(IslandTheme.dim)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                if let tab = model.selectedTab {
+                    StatusDot(status: tab.status)
+                    // 项目名可能很长。让它截断，绝不能挤掉中间给刘海留的空。
+                    Text(tab.title)
+                        .foregroundStyle(IslandTheme.dim)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                } else {
+                    // 一个会话都没有时，展开态落在新建流程上，状态带说清楚这件事。
+                    Text("新建任务")
+                        .foregroundStyle(IslandTheme.dim)
+                }
             }
             .padding(.leading, 11)
         }

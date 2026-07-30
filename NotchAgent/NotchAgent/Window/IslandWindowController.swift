@@ -13,8 +13,10 @@ final class IslandWindowController {
 
     private let model: IslandModel
     private var window: NotchWindow?
-    private var globalClickMonitor: Any?
+    private var hostingView: NotchHostingView?
     private var localKeyMonitor: Any?
+    private var visibilityTimer: Timer?
+    private var isHiddenForFullScreen = false
 
     init(model: IslandModel) {
         self.model = model
@@ -40,11 +42,13 @@ final class IslandWindowController {
         model.geometry = geometry
 
         if window == nil {
-            let hosting = NSHostingView(rootView: IslandShell(model: model))
+            let hosting = NotchHostingView(rootView: IslandShell(model: model))
             hosting.autoresizingMask = [.width, .height]
+            hosting.islandGeometry = { [model] in (model.size, model.cornerRadii) }
             let panel = NotchWindow(contentView: hosting)
             panel.allowsKeyProvider = { [weak self] in self?.model.state == .expanded }
             window = panel
+            hostingView = hosting
         }
 
         window?.setFrame(model.metrics.containerFrame, display: true)
@@ -77,10 +81,24 @@ final class IslandWindowController {
     /// 前台 app 全屏时刘海区被系统占用，岛让位（spec 3.4）。
     private func updateVisibility() {
         guard let window else { return }
-        if isFrontmostAppFullScreen() {
-            window.orderOut(nil)
-        } else {
+        let shouldHide = isFrontmostAppFullScreen()
+
+        if shouldHide != isHiddenForFullScreen {
+            isHiddenForFullScreen = shouldHide
+            if shouldHide { window.orderOut(nil) } else { window.orderFrontRegardless() }
+        } else if !shouldHide, !window.isVisible {
             window.orderFrontRegardless()
+        }
+
+        // 进出全屏有约一秒的动画，通知到达时窗口尺寸还没稳定，判断会不准。
+        // 藏起来之后就轮询，直到确认能出来为止 —— 否则退出全屏后岛回不来。
+        if shouldHide, visibilityTimer == nil {
+            visibilityTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateVisibility() }
+            }
+        } else if !shouldHide {
+            visibilityTimer?.invalidate()
+            visibilityTimer = nil
         }
     }
 
@@ -100,8 +118,11 @@ final class IslandWindowController {
                   let bounds = CGRect(dictionaryRepresentation: raw as! CFDictionary)
             else { continue }
 
-            // 覆盖整块屏（含菜单栏那条）就认为是全屏。
-            if bounds.width >= screen.frame.width - 1, bounds.height >= screen.frame.height - 1 {
+            // 全屏窗口连菜单栏那条一起盖住，普通的"最大化"盖不到 —— 用这个区分。
+            // 窗口坐标原点在左上，所以 minY == 0 才是真的顶到屏幕上沿。
+            if bounds.minY <= 0,
+               bounds.width >= screen.frame.width - 1,
+               bounds.height >= screen.frame.height - 1 {
                 return true
             }
         }
@@ -116,29 +137,29 @@ final class IslandWindowController {
             // 展开必须抢焦点，否则键盘事件根本到不了岛（spec 11.2）。
             window.takeFocus()
         } else {
+            model.isComposingNewTask = false
             window.giveBackFocus()
         }
     }
 
     private func installEventMonitors() {
-        // 点岛外收起。
-        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown]
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.model.state == .expanded else { return }
-                self.model.send(.dismiss)
-            }
-        }
+        // 这里**不装**"点岛外就收起"的全局监听。
+        // 展开时要能从访达把文件夹拖进岛（spec 3.3），一点别处就收起会让拖拽根本没法完成。
+        // 收起只由 ✕ 与 Esc 触发，都是明确动作。
 
-        // Esc 收起。第 2 阶段终端接上后，Esc 要先给 PTY 当中断，这里会让位。
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53 else { return event }
             // NSEvent 不是 Sendable，不能穿过隔离边界返回，所以只把「有没有吃掉」传出来。
             var handled = false
             MainActor.assumeIsolated {
                 guard let self, self.model.state == .expanded else { return }
-                self.model.send(.dismiss)
+                // Esc 先取消新建流程，再按一次才收起岛。
+                // 第 2 阶段终端接上后，Esc 要先给 PTY 当中断，这里会再让位。
+                if self.model.isComposingNewTask, !self.model.tabs.isEmpty {
+                    self.model.cancelNewTask()
+                } else {
+                    self.model.send(.dismiss)
+                }
                 handled = true
             }
             return handled ? nil : event
@@ -146,7 +167,6 @@ final class IslandWindowController {
     }
 
     deinit {
-        if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
         if let localKeyMonitor { NSEvent.removeMonitor(localKeyMonitor) }
     }
 }

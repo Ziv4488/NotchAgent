@@ -51,6 +51,10 @@ final class IslandModel {
     var selectedTabID: UUID?
     /// 鼠标是否悬停。只做轻微高亮，不展开、不预览（spec 3.1）。
     var isHovering = false
+    /// 正在走新建流程（点了 ＋，或者一个 tab 都没有）。
+    var isComposingNewTask = false
+    /// 新建流程的项目列表，进入时才扫盘。
+    private(set) var projects: [ProjectDirectory] = []
 
     var geometry: ScreenGeometryProviding
     var constants: IslandConstants
@@ -116,8 +120,32 @@ final class IslandModel {
     }
 
     func selectTab(_ id: UUID) {
+        isComposingNewTask = false
         selectedTabID = id
         send(.tabOpened)
+    }
+
+    // MARK: - 新建任务（spec 3.3）
+
+    /// 一个 tab 都没有时，展开就应该直接落在新建流程上，不然岛是空的。
+    var showsNewTaskForm: Bool { isComposingNewTask || tabs.isEmpty }
+
+    func beginNewTask() {
+        projects = ProjectDirectoryStore.recent()
+        isComposingNewTask = true
+        if state != .expanded { send(.click) }
+    }
+
+    func cancelNewTask() {
+        isComposingNewTask = false
+    }
+
+    /// 第 1 阶段先造个假会话把流程跑通；第 2 阶段这里换成真的起 `claude`。
+    func startTask(in project: ProjectDirectory, instruction: String) {
+        _ = instruction
+        isComposingNewTask = false
+        debugStartSession(named: project.name)
+        selectedTabID = tabs.last?.id
     }
 
     // MARK: - 第 1 阶段的调试入口

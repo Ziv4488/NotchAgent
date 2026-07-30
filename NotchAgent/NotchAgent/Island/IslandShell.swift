@@ -35,11 +35,8 @@ struct IslandShell: View {
                             .fill(model.isHovering && model.state != .expanded
                                   ? IslandTheme.hoverTint : Color.clear)
                     }
-                    .overlay {
-                        // 沿边缘微微浮起：0.5pt 高光。
-                        NotchShape(bottomRadius: radii.bottom, invertedRadius: radii.inverted)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-                    }
+                    // 原本这里描了一圈 0.5pt 白色高光，但在纯黑岛体上它读起来是一道
+                    // 明显的灰边而不是"浮起"，展开态尤其难看。只留阴影。
                     .shadow(color: .black.opacity(model.state == .idle ? 0.25 : 0.55),
                             radius: model.state == .idle ? 4 : 14,
                             y: model.state == .idle ? 2 : 10)
@@ -59,16 +56,24 @@ struct IslandShell: View {
                        height: model.geometry.menuBarHeight)
 
             if model.state == .notice || model.state == .expanded {
-                TabStrip(model: model)
+                TabStrip(model: model, onNewTask: model.beginNewTask)
                     .transition(.opacity)
             }
 
             if model.state == .expanded {
-                ContentArea(tab: model.selectedTab)
-                    .transition(.opacity)
-                if model.selectedTab?.kind != .app {
-                    InputBar()
+                if model.showsNewTaskForm {
+                    NewTaskForm(projects: model.projects,
+                                onSubmit: model.startTask(in:instruction:),
+                                onCancel: model.cancelNewTask)
                         .transition(.opacity)
+                } else {
+                    ContentArea(tab: model.selectedTab)
+                        .transition(.opacity)
+                    // app tab 的内容区和输入框整体不绘制，真实窗口贴在下面（spec 3.2）。
+                    if model.selectedTab?.kind != .app {
+                        InputBar()
+                            .transition(.opacity)
+                    }
                 }
             }
         }

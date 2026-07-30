@@ -9,6 +9,7 @@ import SwiftUI
 
 struct InputBar: View {
     @State private var text = ""
+    @FocusState private var focused: Bool
     var onSubmit: (String) -> Void = { _ in }
 
     var body: some View {
@@ -17,6 +18,9 @@ struct InputBar: View {
                 .textFieldStyle(.plain)
                 .font(IslandTheme.inputFont)
                 .foregroundStyle(IslandTheme.bright)
+                // 展开就该能直接打字，不该还要再点一下（测试 2.1）。
+                .focused($focused)
+                .onAppear { focused = true }
                 .onSubmit {
                     guard !text.isEmpty else { return }
                     onSubmit(text)
