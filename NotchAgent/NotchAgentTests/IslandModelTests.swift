@@ -108,33 +108,62 @@ struct IslandModelTests {
 
     // MARK: - 模式
 
-    @Test("⇧Tab 依次轮换四档模式，转一圈回到默认")
-    func cycleModeWrapsAround() {
-        let m = model()
-        m.debugStartSession(named: "a")
-        #expect(m.selectedTab?.usage.mode == .manual)
-
-        var seen: [SessionUsage.Mode] = []
-        for _ in SessionUsage.Mode.allCases {
-            m.cycleMode()
-            seen.append(m.selectedTab!.usage.mode)
-        }
-        #expect(Set(seen).count == SessionUsage.Mode.allCases.count)
-        #expect(seen.last == .manual)
-    }
+    // 岛不再自己轮换模式（`cycleMode` 已删）：⇧Tab 一路放行给终端，
+    // 由 Claude Code 自己切，岛只从 hook payload 里读回结果。
+    // 但档位名仍要和终端里显示的是同一个词，这条还得盯着。
 
     @Test("模式档位与 Claude Code 自己的选单一致，不翻译")
     func modesMatchClaudeCode() {
-        // 岛显示的档位必须和用户在终端里看到的是同一个词。
         #expect(SessionUsage.Mode.allCases.map(\.label)
                 == ["Manual", "Accept edits", "Plan", "Auto"])
     }
 
-    @Test("一个会话都没有时轮换模式不炸")
-    func cycleModeWithoutSessionIsHarmless() {
+    // MARK: - 改名
+
+    @Test("改名落到 tab 上")
+    func renamesTab() {
         let m = model()
-        m.cycleMode()
-        #expect(m.tabs.isEmpty)
+        m.debugStartSession(named: "Agent灵动岛")
+        let id = m.tabs[0].id
+        m.renameTab(id, to: "重构鉴权")
+        #expect(m.tabs[0].title == "重构鉴权")
+    }
+
+    /// 空名字会让 tab 芯片缩成只剩一个图标，谁都点不中它。
+    /// 保留原名比接受一个点不中的 tab 好。
+    @Test("空白名字不接受，原名留着", arguments: ["", "   ", "\n\t "])
+    func rejectsBlankNames(blank: String) {
+        let m = model()
+        m.debugStartSession(named: "原名")
+        m.renameTab(m.tabs[0].id, to: blank)
+        #expect(m.tabs[0].title == "原名")
+    }
+
+    @Test("首尾空白会被去掉 —— 用户看不见它，却会撑宽 tab")
+    func trimsWhitespace() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        m.renameTab(m.tabs[0].id, to: "  重构  ")
+        #expect(m.tabs[0].title == "重构")
+    }
+
+    @Test("给不存在的 tab 改名不炸")
+    func renameUnknownTabIsHarmless() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        m.renameTab(UUID(), to: "别的")
+        #expect(m.tabs[0].title == "a")
+    }
+
+    /// 改名后的宽度要立刻反映到 tab 条上 —— notice 态的岛宽就是按它算的，
+    /// 对不上会出现「字比岛长」。
+    @Test("改完名字，tab 条量出来的宽度跟着变")
+    func renameChangesStripWidth() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let before = m.tabStripWidth
+        m.renameTab(m.tabs[0].id, to: "一个相当长的会话名字")
+        #expect(m.tabStripWidth > before)
     }
 
     // MARK: - 中断

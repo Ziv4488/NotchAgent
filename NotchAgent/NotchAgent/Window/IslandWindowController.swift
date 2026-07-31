@@ -178,32 +178,68 @@ final class IslandWindowController {
     private func installEventMonitors() {
         // 这里**不装**"点岛外就收起"的全局监听。
         // 展开时要能从访达把文件夹拖进岛（spec 3.3），一点别处就收起会让拖拽根本没法完成。
-        // 收起只由 ✕ 与 Esc 触发，都是明确动作。
+        // 收起只由 ✕ 与 ⌘W 触发，都是明确动作。
 
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            let isEscape = event.keyCode == 53
-            let isShiftTab = event.keyCode == 48 && event.modifierFlags.contains(.shift)
-            guard isEscape || isShiftTab else { return event }
+            let keyCode = event.keyCode
+            let modifiers = event.modifierFlags
 
             // NSEvent 不是 Sendable，不能穿过隔离边界返回，所以只把「有没有吃掉」传出来。
             var handled = false
             MainActor.assumeIsolated {
                 guard let self, self.model.state == .expanded else { return }
-                if isShiftTab {
-                    // 第 2 阶段终端接上后，⇧Tab 应当原样喂给 PTY、由 Claude Code 自己切；
-                    // 现在先在岛内切，把这个键位占住不让别人抢走。
-                    self.model.cycleMode()
-                } else if self.model.isComposingNewTask, !self.model.tabs.isEmpty {
-                    // Esc 先取消新建流程，再按一次才收起岛。
-                    // 第 2 阶段终端接上后，Esc 要先给 PTY 当中断，这里会再让位。
-                    self.model.cancelNewTask()
-                } else {
+                // 一个 tab 都没有时新建表单是唯一能显示的东西，退不出去 —— 那时 Esc 也别吃。
+                let canCancel = self.model.isComposingNewTask && !self.model.tabs.isEmpty
+                switch Self.action(keyCode: keyCode, modifiers: modifiers,
+                                   canCancelNewTask: canCancel) {
+                case .dismiss:
                     self.model.send(.dismiss)
+                    handled = true
+                case .cancelNewTask:
+                    self.model.cancelNewTask()
+                    handled = true
+                case .passThrough:
+                    break
                 }
-                handled = true
             }
             return handled ? nil : event
         }
+    }
+
+    /// 展开态下一次按键的归属。
+    enum KeyAction: Equatable {
+        /// 岛吃掉，收起。
+        case dismiss
+        /// 岛吃掉，退出新建流程。
+        case cancelNewTask
+        /// 岛不管，原样往下传 —— 绝大多数按键走这条。
+        case passThrough
+    }
+
+    /// 岛在展开态要不要截下这个键。
+    ///
+    /// **Esc 和 ⇧Tab 一律放行给终端。** 它们在 Claude Code 里都有确切含义：
+    /// Esc 取消选单、中断当前回合、连按两下退回上一条；⇧Tab 切权限模式。
+    /// 岛在中间拦一道，等于把这些功能整个废掉 —— 屏幕上明明写着「Esc to cancel」，
+    /// 按下去却是岛收起来了。收起改用 ⌘W：语义正是「关掉这个面板」，
+    /// 而终端和 Claude Code 都不占这个键。
+    ///
+    /// 唯一的例外是新建表单：那时候 first responder 是 SwiftUI 的输入框，
+    /// 根本没有终端在接键，Esc 退出表单不抢任何人的东西。
+    static func action(keyCode: UInt16, modifiers: NSEvent.ModifierFlags,
+                       canCancelNewTask: Bool) -> KeyAction {
+        // 只看这四个真正参与组合键的修饰键。
+        // **不能用 `.deviceIndependentFlagsMask`** —— caps lock、fn、数字小键盘
+        // 都在那个掩码里，帽子键一开 `flags == .command` 就不成立，⌘W 静悄悄失灵。
+        let flags = modifiers.intersection([.command, .shift, .option, .control])
+        if keyCode == KeyCode.w, flags == .command { return .dismiss }
+        if keyCode == KeyCode.escape, flags.isEmpty, canCancelNewTask { return .cancelNewTask }
+        return .passThrough
+    }
+
+    enum KeyCode {
+        static let w: UInt16 = 13
+        static let escape: UInt16 = 53
     }
 
     deinit {

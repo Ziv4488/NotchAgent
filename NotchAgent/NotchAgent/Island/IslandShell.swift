@@ -76,22 +76,20 @@ struct IslandShell: View {
                 } else {
                     ContentArea(model: model, tab: model.selectedTab)
                         .transition(.opacity)
-                    // app tab 的内容区、用量条和输入框整体不绘制，
-                    // 真实窗口贴在下面，额度也不归我们管（spec 3.2）。
-                    if model.selectedTab?.kind != .app {
-                        UsageBar(usage: model.selectedTab?.usage ?? SessionUsage(),
-                                 isRunning: model.selectedTab?.status == .running,
-                                 onCycleMode: model.cycleMode,
+                    // app tab 的内容区和输入框整体不绘制，真实窗口贴在下面（spec 3.2）。
+                    //
+                    // 这里原本还有一条 UsageBar（ctx / 5h / 周 / 模式芯片 / 停止键）。
+                    // 拆掉了：CLI 会话的终端里 Claude Code 自己那条 statusline 就写着
+                    // 上下文和模式，岛再抄一遍是同一份信息占两行；中断也已经归 Esc
+                    // ——它现在直接进 PTY，比按一个我们画的按钮更接近真终端。
+                    //
+                    // 会话活着的时候键盘直接归终端（见 TerminalPane），
+                    // 再摞一个输入框就是两个光标抢一份键入，只在没有活进程时才画它。
+                    if model.selectedTab?.kind != .app, !model.selectedTabHasLiveTerminal {
+                        InputBar(isRunning: false,
+                                 onSubmit: model.submitToSelected,
                                  onStop: model.interruptSelectedTask)
                             .transition(.opacity)
-                        // 会话活着的时候键盘直接归终端（见 TerminalPane），
-                        // 再摞一个输入框就是两个光标抢一份键入，只在没有活进程时才画它。
-                        if !model.selectedTabHasLiveTerminal {
-                            InputBar(isRunning: false,
-                                     onSubmit: model.submitToSelected,
-                                     onStop: model.interruptSelectedTask)
-                                .transition(.opacity)
-                        }
                     }
                 }
             }

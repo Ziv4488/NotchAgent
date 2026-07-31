@@ -242,27 +242,9 @@ final class IslandModel {
         return (geometry.islandCenterX, top, top - metrics.size(for: .expanded).height)
     }
 
-    // MARK: - 模式
-
-    /// ⇧Tab 轮换当前会话的权限模式。
-    ///
-    /// 有真实会话时**不自己改状态**，只把 ⇧Tab 原样送进 PTY，
-    /// 等 hook payload 里的 `permission_mode` 回来再更新显示 ——
-    /// 岛猜一个模式、CLI 里其实是另一个，是最坏的一种不一致。
-    func cycleMode() {
-        guard let id = selectedTab?.id,
-              let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-
-        if let runtime, runtime.session(id) != nil {
-            // CSI Z —— 终端里 ⇧Tab 的转义序列。
-            runtime.write("\u{1b}[Z", to: id)
-            return
-        }
-
-        let all = SessionUsage.Mode.allCases
-        let current = all.firstIndex(of: tabs[index].usage.mode) ?? 0
-        tabs[index].usage.mode = all[(current + 1) % all.count]
-    }
+    // 这里原本有个 `cycleMode()`：⇧Tab 和模式芯片都调它，转发 CSI Z 给 PTY。
+    // 两个入口现在都没了 —— ⇧Tab 直接放行给终端（见 IslandWindowController.action），
+    // 芯片随用量条一起拆掉。少一层转发，模式切换就是终端自己的事。
 
     /// 中断当前会话：给 PTY 发 `Esc`，和在终端里按 Esc 完全一样。
     func interruptSelectedTask() {
@@ -281,6 +263,22 @@ final class IslandModel {
         isComposingNewTask = false
         selectedTabID = id
         send(.tabOpened)
+    }
+
+    /// 给 tab 改个名字。双击 tab 芯片进入编辑（spec 3.2）。
+    ///
+    /// 默认名是项目目录名，同一个仓库开两个会话就是两个一模一样的 tab，
+    /// 分不出哪个在干什么。改完立刻落盘 —— 重启后还叫回目录名等于白改。
+    ///
+    /// 空白名字**不接受**：tab 芯片会缩成只剩一个图标，谁都点不中它。
+    /// 这时候什么都不做、把原名留着，比接受一个不可用的状态好。
+    func renameTab(_ id: UUID, to title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let index = tabs.firstIndex(where: { $0.id == id }),
+              tabs[index].title != trimmed else { return }
+        tabs[index].title = trimmed
+        persistTabs()
     }
 
     // MARK: - 新建任务（spec 3.3）
@@ -375,9 +373,6 @@ final class IslandModel {
         if signal.subagentDelta != 0 {
             tabs[index].usage.subagents = max(0, tabs[index].usage.subagents + signal.subagentDelta)
         }
-        if let path = signal.transcriptPath { transcriptPaths[id] = path }
-        refreshUsage(of: index)
-
         if let status = signal.status {
             let mapped = IslandTab.Status(status)
             // 一轮开始就重置计时。状态带右边显示的是「这一轮跑了多久」，
@@ -413,28 +408,11 @@ final class IslandModel {
         }
     }
 
-    // MARK: - 用量三项（真实来源见 UsageProbe）
-
-    private var transcriptPaths: [UUID: String] = [:]
-    private var cachedLimits: (value: UsageProbe.Limits?, at: Date)?
-
-    /// 刷新上下文占用与账号限额。
-    ///
-    /// 每条 hook 事件都会调到这里，而 `PostToolUse` 是很密的 ——
-    /// 所以限额那份（要读一个可能上兆的 `~/.claude.json`）带 60 秒缓存。
-    /// 上下文那份只读 transcript 的尾部、从后往前扫到第一条就停，够便宜。
-    private func refreshUsage(of index: Int) {
-        if let path = transcriptPaths[tabs[index].id] {
-            tabs[index].usage.contextUsed = UsageProbe.contextRatio(transcriptPath: path)
-        }
-
-        let now = Date()
-        if cachedLimits == nil || now.timeIntervalSince(cachedLimits!.at) > 60 {
-            cachedLimits = (UsageProbe.fresh(UsageProbe.limits(), now: now), now)
-        }
-        tabs[index].usage.fiveHourUsed = cachedLimits?.value?.fiveHour
-        tabs[index].usage.weeklyUsed = cachedLimits?.value?.weekly
-    }
+    // 用量三项（ctx / 5h / 周）原本在这里刷新：每条 hook 事件读一次 transcript 尾部，
+    // 外加一份 60 秒缓存的 `~/.claude.json`。用量条拆掉后没人看这三个数了，
+    // **把这段一起摘掉是为了停掉那些文件读取** —— `PostToolUse` 很密，
+    // 留着就是每秒钟为了没人看的数字去敲几次磁盘。
+    // 怎么读仍完整留在 `UsageProbe` 里（连同测试），要接回来是一行的事。
 
     /// 输入框回车 / 终端外的追问，写进 PTY。
     func submitToSelected(_ text: String) {

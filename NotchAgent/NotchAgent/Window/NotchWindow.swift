@@ -13,8 +13,8 @@ final class NotchWindow: NSPanel {
     /// 由外部决定当前是否允许成为 key —— 只有 expanded 态返回 true（spec 11.2）。
     var allowsKeyProvider: () -> Bool = { false }
 
-    /// 展开前的前台 app，收起时把焦点还回去。
-    private var previousApp: NSRunningApplication?
+    /// 展开前的前台 app，收起时把焦点还回去。规则见 `FocusHandoff`。
+    private var handoff = FocusHandoff()
 
     /// 岛的层级。菜单栏是 24、控制中心是 25，都要压过去。
     static let islandLevel = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
@@ -61,7 +61,7 @@ final class NotchWindow: NSPanel {
 
     /// 展开时抢焦点。四步缺一不可（spec 11.2）。
     func takeFocus(firstResponder: NSView? = nil) {
-        previousApp = NSWorkspace.shared.frontmostApplication
+        handoff.remember(NSWorkspace.shared.frontmostApplication)
         NSApp.activate()
         makeKeyAndOrderFront(nil)
         makeMain()
@@ -75,8 +75,7 @@ final class NotchWindow: NSPanel {
     /// 收起时把焦点交还给展开前那个 app。
     func giveBackFocus() {
         orderFront(nil)
-        previousApp?.activate()
-        previousApp = nil
+        handoff.appToRestore(islandIsFrontmost: NSApp.isActive)?.activate()
     }
 
     /// 把本进程里的输入法候选框抬到岛之上。

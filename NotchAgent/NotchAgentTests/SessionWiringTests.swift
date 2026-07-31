@@ -188,9 +188,7 @@ struct SessionWiringTests {
                         instruction: "跑测试")
         #expect(model.tabs.count == 1)
         #expect(model.selectedTabHasLiveTerminal == false)
-        // 停止、轮换模式在没有会话时退回本地行为，不该崩。
-        model.cycleMode()
-        #expect(model.tabs[0].usage.mode == .acceptEdits)
+        // 停止在没有会话时退回本地行为，不该崩。
         model.interruptSelectedTask()
         #expect(model.tabs[0].status == .done)
     }

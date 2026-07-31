@@ -177,6 +177,15 @@ struct NewTaskForm: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "选择"
+
+        // 岛压在菜单栏之上（statusBar + 1），而 NSOpenPanel 是一个普通窗口（level 0），
+        // 不抬起来必被岛盖掉一截 —— 实机上就是这样，选择框从岛底下露出来半截。
+        // 抬到岛之上而不是把岛降下去：它是模态的，用户此刻的全部注意力本来就在它身上，
+        // 反过来让岛沉下去会看到岛突然被别的窗口盖住，更奇怪。
+        panel.level = NSWindow.Level(rawValue: NotchWindow.islandLevel.rawValue + 1)
+        // LSUIElement 的 app 不是前台时，模态框可能开在别人后面。
+        NSApp.activate()
+
         guard panel.runModal() == .OK, let url = panel.url else { return }
         selected = ProjectDirectory(path: url.path, lastUsed: .now, hasSessions: false)
         instructionFocused = true
