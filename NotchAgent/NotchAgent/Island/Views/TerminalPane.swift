@@ -54,12 +54,15 @@ struct TerminalPane: NSViewRepresentable {
         host.claimFocus()
     }
 
-    /// 第 4 阶段的「终端配色与字体」会把这里换成可配置的；现在先钉死成岛的样子。
+    /// 第 4 阶段的「终端配色与字体」会把这里换成可配置的；现在先钉死一组默认值。
+    ///
+    /// 背景**故意留空**：底色由内容区那张圆角卡片（`IslandTheme.panelFill`）出，
+    /// 终端自己填不出圆角，一填四个角就方了。改底色去改 `panelFill`，别改这里。
     private func style(_ terminal: LocalProcessTerminalView) {
         terminal.nativeBackgroundColor = .clear
-        terminal.nativeForegroundColor = NSColor(white: 0.92, alpha: 1)
-        terminal.caretColor = NSColor(red: 0.85, green: 0.47, blue: 0.34, alpha: 1)
-        terminal.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        terminal.nativeForegroundColor = IslandTheme.terminalForeground
+        terminal.caretColor = IslandTheme.terminalCaret
+        terminal.font = IslandTheme.terminalFont
         terminal.wantsLayer = true
         terminal.layer?.backgroundColor = .clear
     }
