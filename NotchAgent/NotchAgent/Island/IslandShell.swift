@@ -7,8 +7,17 @@
 
 import SwiftUI
 
+/// 选项浮层在画布里的位置。窗口层拿它放行命中测试。
+private struct MenuFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+}
+
 struct IslandShell: View {
     @Bindable var model: IslandModel
+
+    /// 报告浮层位置用的坐标系。原点就是画布左上角，和 `NotchHostingView` 的一致。
+    fileprivate static let canvas = "island-canvas"
 
     private var size: CGSize { model.size }
     private var radii: IslandCornerRadii { model.cornerRadii }
@@ -16,11 +25,33 @@ struct IslandShell: View {
     private var canvasWidth: CGFloat { size.width + radii.inverted * 2 }
 
     var body: some View {
-        island
-            // 画布固定为最大态尺寸，岛在里面变形 —— 每帧改 NSWindow 的 frame 会抖。
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .animation(IslandTheme.morph, value: model.state)
-            .animation(IslandTheme.morph, value: model.tabs)
+        VStack(spacing: 6) {
+            island
+            // 终端在问话时，选项直接挂在岛下面点（spec 3.1）。
+            // 窗口本来就按最大态尺寸开着（见 IslandMetrics.containerFrame），
+            // 收起态下面这一大片是空的，正好放它。
+            if let menu = model.pendingMenu, let id = model.selectedTab?.id {
+                MenuPanel(menu: menu) { model.choose($0, in: id) }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    // 命中测试被收在岛的轮廓里（见 NotchHostingView），
+                    // 这块浮层在轮廓之外 —— 不把它的位置报上去，点了没反应。
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.preference(key: MenuFrameKey.self,
+                                                   value: proxy.frame(in: .named(Self.canvas)))
+                        }
+                    }
+            }
+        }
+        .coordinateSpace(name: Self.canvas)
+        .onPreferenceChange(MenuFrameKey.self) { frame in
+            MainActor.assumeIsolated { model.menuFrame = frame }
+        }
+        // 画布固定为最大态尺寸，岛在里面变形 —— 每帧改 NSWindow 的 frame 会抖。
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(IslandTheme.morph, value: model.state)
+        .animation(IslandTheme.morph, value: model.tabs)
+        .animation(IslandTheme.morph, value: model.pendingMenu)
     }
 
     private var island: some View {

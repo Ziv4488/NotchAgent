@@ -29,8 +29,16 @@ final class NotchHostingView: NSHostingView<IslandShell> {
     override func hitTest(_ point: NSPoint) -> NSView? {
         // hitTest 收到的是父视图坐标系里的点。
         let local = convert(point, from: superview)
-        guard islandPath().contains(local) else { return nil }
+        // 岛的轮廓，外加挂在它下面的选项浮层 —— 那块在轮廓之外，
+        // 不单独放行的话点上去没有任何反应（透明区一律不收事件）。
+        guard islandPath().contains(local) || menuRect().contains(local) else { return nil }
         return super.hitTest(point)
+    }
+
+    /// 选项浮层占的那块。没有浮层时是空矩形，`contains` 恒为假。
+    private func menuRect() -> CGRect {
+        let frame = rootView.model.menuFrame
+        return frame.isEmpty ? .null : frame
     }
 
     /// 岛的轮廓，转换到本视图坐标系。

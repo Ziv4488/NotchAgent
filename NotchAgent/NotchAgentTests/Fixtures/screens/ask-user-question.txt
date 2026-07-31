@@ -1,0 +1,35 @@
+
+╭─── Claude Code v2.1.220 ───────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting started  │
+│                 Welcome back ZivL!                 │ Run /init to create a CL… │
+│                                                    │ ───────────────────────── │
+│                       ▐▛███▜▌                      │ What's new                │
+│                      ▝▜█████▛▘                     │ Bug fixes and reliabilit… │
+│                        ▘▘ ▝▝                       │ Added Claude Opus 5 (`cl… │
+│ Opus 5 with high effort · Claude Pro ·             │ Added `sandbox.network.s… │
+│ 82jwdtbxx8@privaterelay.appleid.com's Organization │ /release-notes for more   │
+│             ~/Desktop/Vibe/Agent灵动岛             │                           │
+╰────────────────────────────────────────────────────────────────────────────────╯
+
+ ⚠ 14 MCP servers need authentication · run /mcp
+
+❯ 用 AskUserQuestion                                                              
+  工具问我一个问题：晚饭吃什么，给三个选项，每个选项都写一句说明。不要做别的事。  
+──────────────────────────────────────────────────────────────────────────────────
+ ☐ 晚饭 
+
+晚饭吃什么？
+
+❯ 1. 日式拉面
+     一碗热汤面，暖胃又省事，天冷或者累的时候最合适。
+  2. 川菜小炒
+     重口味下饭，麻辣鲜香，适合想吃点刺激、开胃的时候。
+  3. 轻食沙拉
+     清爽低负担，吃完不犯困，适合中午已经吃得比较油腻的情况。
+  4. Type something.
+──────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel
+
+

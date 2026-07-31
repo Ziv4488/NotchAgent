@@ -28,6 +28,8 @@ final class SessionStore {
 
     func session(_ id: SessionID) -> CLISession? { sessions[id] }
 
+    var all: [CLISession] { Array(sessions.values) }
+
     func terminateAll() {
         for session in sessions.values { session.terminate() }
         sessions.removeAll()

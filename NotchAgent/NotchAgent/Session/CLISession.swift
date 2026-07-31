@@ -111,6 +111,30 @@ final class CLISession: NSObject, AgentSession, LocalProcessTerminalViewDelegate
         terminalView.send(txt: "\u{1b}")
     }
 
+    /// 当前可见屏的每一行文字。
+    ///
+    /// **必须从 SwiftTerm 渲染完的缓冲区里取，不能扒 PTY 的原始字节。**
+    /// Claude Code 的 TUI 大量用光标定位来排版：一段「Do you want to create note.txt?」
+    /// 在字节流里是「Do」+ 光标右移 + 「you」+ 光标右移…… 把转义序列剥掉之后
+    /// 得到的是 `Doyouwanttocreatenote.txt?` —— 探针里就是这么发现的。
+    /// 空格根本不在字节里，它是渲染的结果。
+    /// 两处都不能省，都是从真实 dump 里发现的：
+    ///
+    /// - `skipNullCellsFollowingWide`：一个汉字占两格，第二格是空的。
+    ///   不跳过的话「晚饭吃什么」取出来是「晚 饭 吃 什 么」，字字带空格。
+    /// - 把剩下的 `\0` 换成空格：没被写过的格子在缓冲区里是 NUL 不是空格，
+    ///   「Do you want to…」会变成「Do\0you\0want\0to…」，按词匹配全废。
+    ///
+    /// SwiftTerm 自己的 `getText` 两件事都做了，只是它不按行返回。
+    func visibleLines() -> [String] {
+        let terminal = terminalView.getTerminal()
+        return (0..<terminal.rows).map { row in
+            let line = terminal.getLine(row: row)?
+                .translateToString(trimRight: true, skipNullCellsFollowingWide: true) ?? ""
+            return line.replacingOccurrences(of: "\u{0}", with: " ")
+        }
+    }
+
     // MARK: - 环境
 
     private func environment() -> [String] {

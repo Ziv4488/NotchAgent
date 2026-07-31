@@ -380,6 +380,7 @@ final class IslandModel {
         self.runtime = runtime
         runtime.onSignal = { [weak self] id, signal in self?.apply(signal, to: id) }
         runtime.onStatusChanged = { [weak self] id, status in self?.apply(status, to: id) }
+        runtime.onMenu = { [weak self] id, menu in self?.apply(menu, to: id) }
         if let size = runtime.preferences.expandedSize {
             expandedWidth = size.width.clamped(to: expandedWidthRange)
             expandedContentHeight = size.contentHeight.clamped(to: expandedContentHeightRange)
@@ -438,6 +439,57 @@ final class IslandModel {
     // **把这段一起摘掉是为了停掉那些文件读取** —— `PostToolUse` 很密，
     // 留着就是每秒钟为了没人看的数字去敲几次磁盘。
     // 怎么读仍完整留在 `UsageProbe` 里（连同测试），要接回来是一行的事。
+
+    // MARK: - 终端里的选择题（spec 3.1）
+
+    /// 每个 tab 当前摆着的选择题。收起态靠它在岛下方摆出选项。
+    private(set) var menus: [UUID: TerminalMenu] = [:]
+
+    /// 选项浮层在画布里的位置，由视图层量完报上来。
+    /// 窗口层的命中测试是收在岛轮廓里的，得靠它给这块浮层放行。
+    var menuFrame: CGRect = .zero
+
+    /// 选中的那个 tab 现在有没有在问你。**只在收起态给** ——
+    /// 展开时终端本身就摆着那个选单，再叠一层浮层是两份同样的东西。
+    var pendingMenu: TerminalMenu? {
+        guard state != .expanded, let id = selectedTab?.id else { return nil }
+        return menus[id]
+    }
+
+    /// 终端上出现 / 消失了一道选择题。
+    ///
+    /// **这条通道补的是 hook 补不上的洞。** 探针实测：`AskUserQuestion` 那种
+    /// 编号选单一个 hook 都不发，光靠事件岛根本不知道自己被问了话 ——
+    /// 它会一直显示「在跑」，而终端其实卡在那儿等人。所以看到选单就等于
+    /// 收到了一次「等你回话」，该催人就催人。
+    func apply(_ menu: TerminalMenu?, to id: SessionID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let had = menus[id] != nil
+        menus[id] = menu
+
+        if let menu {
+            tabs[index].status = .waiting
+            tabs[index].activity = menu.question
+            let watching = state == .expanded && selectedTab?.id == id
+            tabs[index].unread = !watching
+            send(.sessionStopped)
+        } else if had {
+            // 答完了。状态交回给 hook —— 那边紧接着就会来 PostToolUse / Stop。
+            // 这里只把「等你回话」摘掉，不擅自宣布它跑完了或者没跑完。
+            if tabs[index].status == .waiting { tabs[index].status = .running }
+            tabs[index].activity = nil
+            send(.sessionProgress)
+        }
+    }
+
+    /// 用户在岛下方点了一项。把对应的数字键打进 PTY，跟他自己在终端里按一样。
+    func choose(_ option: TerminalMenu.Option, in id: SessionID) {
+        guard let menu = menus[id] else { return }
+        runtime?.write(menu.keystroke(for: option), to: id)
+        // **不在这里清 menus。** 清不清由下一次扫描说了算：
+        // 万一那一下没被接受（比如选单换了一页），岛该继续显示它，
+        // 而不是自作主张地宣布问题解决了。
+    }
 
     /// 输入框回车 / 终端外的追问，写进 PTY。
     func submitToSelected(_ text: String) {

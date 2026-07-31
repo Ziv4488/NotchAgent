@@ -24,6 +24,8 @@ final class SessionRuntime {
     var onSignal: ((SessionID, SessionSignal) -> Void)?
     /// 会话进程状态变了（起来了 / 退出了 / 崩了）。
     var onStatusChanged: ((SessionID, SessionStatus) -> Void)?
+    /// 终端里摆出了一道选择题，或者刚才那道没了（nil）。
+    var onMenu: ((SessionID, TerminalMenu?) -> Void)?
 
     private let log = Logger(subsystem: "com.notchagent", category: "runtime")
 
@@ -53,9 +55,13 @@ final class SessionRuntime {
             // 终端照样能用，只是收起态没有进度文案。
             log.error("hook 通道启动失败，降级成「运行中（无详情）」：\(error.localizedDescription, privacy: .public)")
         }
+
+        startWatchingMenus()
     }
 
     func shutdown() {
+        menuTimer?.invalidate()
+        menuTimer = nil
         store.terminateAll()
         bridge.stop()
     }
@@ -114,6 +120,49 @@ final class SessionRuntime {
     }
 
     var hasLiveSessions: Bool { store.runningCount > 0 }
+
+    // MARK: - 盯着终端上的选择题
+
+    /// 上一拍看到的（还没确认），和已经报上去的。
+    private var pendingMenus: [SessionID: TerminalMenu?] = [:]
+    private var reportedMenus: [SessionID: TerminalMenu?] = [:]
+    private var menuTimer: Timer?
+
+    /// 轮询而不是等回调：SwiftTerm 的 delegate 里**没有「收到数据」这一项**
+    /// （只有 sizeChanged / setTerminalTitle / processTerminated），
+    /// 而选单是纯屏幕现象，没有任何事件对应它。
+    ///
+    /// 半秒扫一次四十行缓冲区，代价可以忽略。
+    private func startWatchingMenus() {
+        menuTimer = Timer.scheduledTimer(withTimeInterval: Self.menuPollInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.scanForMenus() }
+        }
+    }
+
+    static let menuPollInterval: TimeInterval = 0.5
+
+    private func scanForMenus() {
+        var alive = Set<SessionID>()
+        for session in store.all where session.status.isAlive {
+            alive.insert(session.id)
+            let menu = TerminalMenu.parse(session.visibleLines())
+
+            // **连着两拍一样才算数。** 选单是一行行画出来的，扫在半中间会得到
+            // 一个选项不全的版本；隔半秒再看一眼，稳定了才往上报。
+            let confirmed = pendingMenus[session.id].map { $0 == menu } ?? false
+            pendingMenus[session.id] = menu
+            guard confirmed else { continue }
+
+            let reported = reportedMenus[session.id] ?? nil
+            guard reported != menu else { continue }
+            reportedMenus[session.id] = menu
+            onMenu?(session.id, menu)
+        }
+
+        // 会话没了就把记录清掉，免得越攒越多。
+        pendingMenus = pendingMenus.filter { alive.contains($0.key) }
+        reportedMenus = reportedMenus.filter { alive.contains($0.key) }
+    }
 
     // MARK: - hook 事件落地
 
