@@ -39,7 +39,8 @@ struct TabStrip: View {
                     // 用户报的「每个标签之间切换反应都很慢」就出在这里：原本是
                     // `.onTapGesture(count: 2)` 叠一条 `.onTapGesture`，单击必须
                     // 先等满系统的双击间隔、确认没有第二下才轮得到它。
-                    // 实测（`TEMPProbe`）：点下去到 tab 真的切过去 **363 ms**。
+                    // 实机量过（合成点击 → `selectedTabID` 变化）：点下去到 tab 真的切过去
+                    // **363 ms**，正是这块屏幕上的双击间隔。
                     //
                     // 换成 `.simultaneousGesture` 也没用 —— 又量了一次，还是 363 ms。
                     // 只要 SwiftUI 里存在一条 count: 2 的手势，单击就得等。
