@@ -23,6 +23,19 @@ import Foundation
 /// 「停下这一轮但留着会话」。所以看见 Esc 就等于看见这一轮结束了。
 enum TerminalKeystroke {
 
+    /// 按一下 ↑ 要写进 PTY 的字节。
+    ///
+    /// **两种编码由对面的程序说了算**：终端处在 application cursor 模式
+    /// （DECCKM，`ESC [ ? 1 h`）时是 `ESC O A`，否则是 `ESC [ A`。
+    /// 发错那种，接收方可能把它当成一串普通字符打进输入框里。
+    /// 当前模式从 `Terminal.applicationCursor` 读，不要猜。
+    ///
+    /// 注意这**不是** Esc：`isEscape` 只认单独一个 `0x1b`，所以这一下不会被
+    /// 当成「用户掐了这一轮」（见 `TerminalKeystrokeTests`）。
+    static func cursorUp(applicationMode: Bool) -> String {
+        applicationMode ? "\u{1b}OA" : "\u{1b}[A"
+    }
+
     /// 这一段字节是不是「用户按了 Esc」。
     ///
     /// 两种编码都要认，因为用哪种由**对面的程序**决定，不由我们：

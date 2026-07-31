@@ -220,6 +220,17 @@ struct RenameFieldWidthTests {
         #expect(TabStrip.chipWidth(for: tab) >= withoutClose + TabStrip.Layout.closeSize)
     }
 
+    /// **用户报的「拖动的时候会抽动」。** 换位之后芯片前进了一整格、位移也减掉
+    /// 一整格，它当场就落在「离新的左邻居正好半格」的地方。阈值要是 0.5，
+    /// 反向条件同时成立，手抖一下就来回换位。阈值必须留出余量。
+    @Test("换位阈值留了余量，不会换完就换回来")
+    func swapThresholdLeavesRoomToComeBack() {
+        let threshold = TabStrip.Layout.swapThreshold
+        #expect(threshold > 0.5)
+        // 越过去之后离反向那条线还差多远（按邻居宽度的比例算）。
+        #expect(threshold - (1 - threshold) > 0.1)
+    }
+
     /// 拖拽换位是拿这个宽度算「越过邻居没有」的，它必须和 tab 条量出来的一致。
     @Test("tab 条的宽度就是各芯片宽度加起来")
     func stripWidthIsTheSumOfItsChips() {

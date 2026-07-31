@@ -34,7 +34,8 @@ struct IslandShell: View {
                           onChoose: { model.choose($0, in: id) },
                           onSubmit: model.submitInlineText,
                           onFocusRequest: { model.onInlineEntryFocusRequested?() },
-                          onCancel: model.cancelInlineText)
+                          onCancel: model.cancelInlineText,
+                          onBack: model.backOutOfTextEntry)
                     .transition(.opacity.combined(with: .move(edge: .top)))
                     // 命中测试被收在岛的轮廓里（见 NotchHostingView），
                     // 这块浮层在轮廓之外 —— 不把它的位置报上去，点了没反应。
@@ -61,7 +62,13 @@ struct IslandShell: View {
         // 报上去的 x 就比真实位置小了半个画布。
         .coordinateSpace(name: Self.canvas)
         .animation(IslandTheme.morph, value: model.state)
-        .animation(IslandTheme.morph, value: model.tabs)
+        // **不是 `value: model.tabs`。** 那样一来「拖着 tab 换位置」也算 tabs 变了，
+        // 整条 tab 条会跟着弹 0.38 秒的簧 —— 手还在往前走，芯片在后面一颠一颠地追，
+        // 就是用户报的「拖动的时候会抽动，不跟手」。
+        //
+        // 岛的外形只跟**有几个 tab、tab 条有多宽**有关，跟顺序无关；换位不改变它，
+        // 于是拖动一路上没有任何隐式动画，芯片的位移直接跟手。
+        .animation(IslandTheme.morph, value: model.tabShape)
         .animation(IslandTheme.morph, value: model.pendingMenu)
     }
 

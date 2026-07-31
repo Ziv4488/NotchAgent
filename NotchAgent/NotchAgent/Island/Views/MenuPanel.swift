@@ -32,6 +32,8 @@ struct MenuPanel: View {
     var onFocusRequest: () -> Void = {}
     /// 输入态下按 Esc：原样发给终端（那儿印着「Esc to cancel」）。
     var onCancel: () -> Void = {}
+    /// 从输入框退回那一排选项。
+    var onBack: () -> Void = {}
 
     /// 鼠标停在哪一项上。
     @State private var hovered: Int?
@@ -44,7 +46,8 @@ struct MenuPanel: View {
                 TextEntryRow(prompt: menu.question,
                              onSubmit: onSubmit,
                              onFocusRequest: onFocusRequest,
-                             onCancel: onCancel)
+                             onCancel: onCancel,
+                             onBack: onBack)
             } else {
                 question
                 ForEach(menu.options, id: \.number) { option in
@@ -143,17 +146,21 @@ private struct TextEntryRow: View {
     var onSubmit: (String) -> Void
     var onFocusRequest: () -> Void
     var onCancel: () -> Void
+    var onBack: () -> Void
 
     @State private var text = ""
     @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !prompt.isEmpty {
-                Text(prompt)
-                    .font(IslandTheme.tabFont)
-                    .foregroundStyle(IslandTheme.bright)
-                    .lineLimit(2)
+            HStack(spacing: 6) {
+                backButton
+                if !prompt.isEmpty {
+                    Text(prompt)
+                        .font(IslandTheme.tabFont)
+                        .foregroundStyle(IslandTheme.bright)
+                        .lineLimit(1)
+                }
             }
             HStack(spacing: 7) {
                 TextField("打一句回给它…", text: $text)
@@ -195,6 +202,27 @@ private struct TextEntryRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 6)
+    }
+
+    /// 退回那一排选项。
+    ///
+    /// 点错了「Type something.」是常事，而这时候浮层上**一个选项都没有**了
+    /// （它们已经不是按钮，画出来点一下就是往框里打数字）。没有这一下，
+    /// 唯一的退路是 Esc —— 那会把整道题一起取消掉，不是他要的。
+    private var backButton: some View {
+        Button(action: onBack) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Color.white.opacity(0.75))
+                .frame(width: 18, height: 16)
+                .background {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.white.opacity(0.12))
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("回到选项")
     }
 
     /// 先让窗口够格拿键盘，再设 first responder。

@@ -119,6 +119,13 @@ final class SessionRuntime {
 
     func write(_ text: String, to id: SessionID) {
         store.session(id)?.write(text)
+        quickenMenuScan()
+    }
+
+    /// 按一下 ↑（岛上那个「返回选项」）。
+    func sendCursorUp(to id: SessionID) {
+        store.session(id)?.sendCursorUp()
+        quickenMenuScan()
     }
 
     /// 停止键：给 PTY 发 `Esc`，等价于在终端里按 Esc（见 `CLISession.interrupt`）。
@@ -144,13 +151,30 @@ final class SessionRuntime {
     /// 而选单是纯屏幕现象，没有任何事件对应它。
     ///
     /// 半秒扫一次四十行缓冲区，代价可以忽略。
-    private func startWatchingMenus() {
-        menuTimer = Timer.scheduledTimer(withTimeInterval: Self.menuPollInterval, repeats: true) { [weak self] _ in
+    private func startWatchingMenus(every interval: TimeInterval = menuPollInterval) {
+        menuTimer?.invalidate()
+        menuTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.scanForMenus() }
         }
     }
 
     static let menuPollInterval: TimeInterval = 0.5
+    /// 刚打过字之后的那两秒，扫得密一些。
+    static let quickPollInterval: TimeInterval = 0.12
+    private static let quickPollWindow: TimeInterval = 2
+
+    /// 刚往 PTY 里写过东西 —— 屏幕马上就要变，接下来这两秒盯紧一点。
+    ///
+    /// 平时半秒一拍、还要**连着两拍一样**才上报（防止扫到画到一半的选单），
+    /// 于是「点了 Type something. 到岛上真的换成输入框」最坏要等 1.5 秒 ——
+    /// 用户报的「转换太慢」。而我们自己写字的那一刻是**确切知道**屏幕要变的，
+    /// 那时候没有理由还按空闲节奏等。两秒后自己回到半秒一拍。
+    private func quickenMenuScan() {
+        quickScanDeadline = Date().addingTimeInterval(Self.quickPollWindow)
+        startWatchingMenus(every: Self.quickPollInterval)
+    }
+
+    private var quickScanDeadline: Date?
 
     private func scanForMenus() {
         var alive = Set<SessionID>()
@@ -173,6 +197,12 @@ final class SessionRuntime {
         // 会话没了就把记录清掉，免得越攒越多。
         pendingMenus = pendingMenus.filter { alive.contains($0.key) }
         reportedMenus = reportedMenus.filter { alive.contains($0.key) }
+
+        // 密集那一阵过去了，回到空闲节奏。
+        if let deadline = quickScanDeadline, Date() >= deadline {
+            quickScanDeadline = nil
+            startWatchingMenus()
+        }
     }
 
     // MARK: - hook 事件落地

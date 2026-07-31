@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import SwiftUI
 import Testing
 @testable import NotchAgent
 
@@ -219,5 +220,84 @@ struct CLISessionTests {
             settingsURL: URL(fileURLWithPath: "/s/h.json"),
             instruction: "", resume: false)
         #expect(launch.arguments == ["--settings", "/s/h.json"])
+    }
+}
+
+/// 内容区在画终端、还是在画「继续上次会话」。
+@Suite("内容区画什么")
+@MainActor
+struct ContentKindTests {
+
+    private func tab(detached: Bool = false, kind: IslandTab.Kind = .cli) -> IslandTab {
+        IslandTab(title: "a", kind: kind, status: detached ? .ended : .running,
+                  accent: .red, isDetached: detached)
+    }
+
+    private func deadSession() async -> CLISession {
+        let session = CLISession(title: "测试", workingDirectory: nil,
+                                 launch: CLISession.Launch(executable: "/bin/sh",
+                                                           arguments: ["-c", "exit 0"],
+                                                           searchPath: "/usr/bin:/bin",
+                                                           settingsURL: nil))
+        try? session.start()
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline, session.status.isAlive {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return session
+    }
+
+    /// **用户报的 bug。** 旧 tab 走 `--resume`，在「选哪个 session」那一屏按 Esc，
+    /// claude 当场退出。会话对象还在 store 里，光看「有没有 session」就会去画它的
+    /// 终端 —— 而 Claude Code 退出时还原了备用屏，画出来是一整块黑、
+    /// 左上角一个光标，看着像 app 卡住了。
+    @Test("进程死了就不画终端，给「继续上次会话」")
+    func deadSessionFallsBackToDetached() async {
+        let session = await deadSession()
+        #expect(session.status.isAlive == false)
+
+        let kind = ContentArea.kind(tab: tab(detached: true), session: session, launchError: nil)
+        guard case .detached = kind else {
+            Issue.record("画的是 \(kind)，不是「继续上次会话」")
+            return
+        }
+    }
+
+    @Test("活着就画终端")
+    func liveSessionDrawsTheTerminal() throws {
+        let session = CLISession(title: "测试", workingDirectory: nil,
+                                 launch: CLISession.Launch(executable: "/bin/sh",
+                                                           arguments: ["-c", "sleep 5"],
+                                                           searchPath: "/usr/bin:/bin",
+                                                           settingsURL: nil))
+        try session.start()
+        defer { session.terminate() }
+
+        let kind = ContentArea.kind(tab: tab(), session: session, launchError: nil)
+        guard case .terminal = kind else {
+            Issue.record("画的是 \(kind)，不是终端")
+            return
+        }
+    }
+
+    /// app tab 的内容区整块不绘制，真实窗口贴在下面（spec 3.2）。
+    @Test("app tab 什么都不画")
+    func attachedAppDrawsNothing() {
+        let kind = ContentArea.kind(tab: tab(kind: .app), session: nil, launchError: nil)
+        guard case .attachedApp = kind else {
+            Issue.record("画的是 \(kind)")
+            return
+        }
+    }
+
+    /// 起不来的时候把原因摆出来，别退回一句没用的「没有活着的进程」。
+    @Test("起不来就显示原因")
+    func launchErrorIsShown() {
+        let kind = ContentArea.kind(tab: nil, session: nil, launchError: "找不到 claude 命令。")
+        guard case .launchError(let message) = kind else {
+            Issue.record("画的是 \(kind)")
+            return
+        }
+        #expect(message == "找不到 claude 命令。")
     }
 }

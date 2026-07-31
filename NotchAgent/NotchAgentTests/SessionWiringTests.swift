@@ -196,6 +196,31 @@ struct SessionWiringTests {
         #expect(model.selectedTabID == selected)
     }
 
+    /// **用户报的「拖动的时候会抽动」的另一半。** 岛的形变动画原本挂在 `tabs` 上，
+    /// 于是换位也算「tabs 变了」，整条 tab 条跟着弹 0.38 秒的簧 —— 手在前面走，
+    /// 芯片在后面追。换位不改变岛的外形，这条钉住这一点。
+    @Test("换位不改变岛的外形")
+    func reorderDoesNotChangeTheShape() {
+        let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
+        model.debugStartSession(named: "a")
+        model.debugStartSession(named: "一个长得多的名字")
+        let before = model.tabShape
+
+        model.moveTab(from: 0, to: 1)
+        #expect(model.tabShape == before)
+    }
+
+    /// 反过来：真的多一个 tab 就该变 —— 否则岛不会跟着长宽，这个值就是死的。
+    @Test("多一个 tab 就改变外形")
+    func addingATabChangesTheShape() {
+        let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
+        model.debugStartSession(named: "a")
+        let before = model.tabShape
+
+        model.debugStartSession(named: "b")
+        #expect(model.tabShape != before)
+    }
+
     /// 拖到两头之外时视图层照样会调进来（手还在往外拉）。
     @Test("越界的换位是空操作", arguments: [(0, 5), (-1, 0), (0, 0)])
     func outOfRangeMoveIsHarmless(source: Int, destination: Int) {
@@ -204,6 +229,41 @@ struct SessionWiringTests {
         model.debugStartSession(named: "b")
         model.moveTab(from: source, to: destination)
         #expect(model.tabs.map(\.title) == ["a", "b"])
+    }
+
+    /// **用户报的 bug。** 一个开在最左边的老 tab，「继续上次会话」一次就窜到最右边 ——
+    /// `resumeTab` 是「删掉 + 重新追加」。顺序是用户自己排的，重开不该打乱它。
+    @Test("继续上次会话之后，tab 还在原来的位置")
+    func resumingKeepsThePosition() {
+        let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
+        model.debugStartSession(named: "a", directory: "/tmp/a")
+        model.debugStartSession(named: "b")
+        model.debugStartSession(named: "c")
+
+        model.resumeTab(model.tabs[0].id)
+        #expect(model.tabs.map(\.title) == ["a", "b", "c"])
+        #expect(model.tabs.count == 3)
+    }
+
+    /// 重开的那个得是选中的 —— 用户刚点了「继续上次会话」，他要看的就是它。
+    @Test("继续上次会话之后选中的是它自己")
+    func resumingSelectsTheNewTab() {
+        let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
+        model.debugStartSession(named: "a", directory: "/tmp/a")
+        model.debugStartSession(named: "b")
+
+        model.resumeTab(model.tabs[0].id)
+        #expect(model.selectedTabID == model.tabs[0].id)
+    }
+
+    /// 新建任务照旧追加到末尾，不受「插回原位」那条路影响。
+    @Test("新建任务还是排在最后")
+    func newTasksStillGoLast() {
+        let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
+        model.debugStartSession(named: "a")
+        model.startTask(in: ProjectDirectory(path: "/tmp/z", lastUsed: .now, hasSessions: false),
+                        instruction: "")
+        #expect(model.tabs.last?.title == "z")
     }
 
     /// 同一个项目每次开都该是同一个颜色，不然 tab 条上认不出老朋友。

@@ -99,7 +99,17 @@ struct TabStrip: View {
     /// `minimumDistance` 不能是 0：那样单纯的点击也会被算成一次拖拽，
     /// 切 tab 就点不动了。
     private func drag(_ tab: IslandTab) -> some Gesture {
-        DragGesture(minimumDistance: Layout.dragThreshold)
+        // **坐标系必须是 `.global`。**
+        //
+        // 默认那个是**芯片自己的**局部坐标系 —— 而换位之后芯片整个挪了一格，
+        // 局部原点跟着挪，于是 `translation` 当场跳了一整格：本来是 +0.7 格，
+        // 一换位变成 -0.3 格，再减掉我们记的那一格补偿就成了 -1.3 格，
+        // 反向条件立刻成立 → 换回去 → translation 又跳回来 → 再换过去。
+        // 探针实测：手停在换位线附近抖 ±3pt，六下里换位发生了 **5 次**。
+        // 这就是用户报的「拖动的时候会抽动」。
+        //
+        // 全局坐标系不随视图移动，位移才是手真的走了多远。
+        DragGesture(minimumDistance: Layout.dragThreshold, coordinateSpace: .global)
             .onChanged { value in
                 draggingID = tab.id
                 var offset = value.translation.width - dragConsumed
@@ -107,14 +117,14 @@ struct TabStrip: View {
 
                 if offset > 0, index + 1 < model.tabs.count {
                     let step = Self.chipWidth(for: model.tabs[index + 1]) + Layout.tabGap
-                    if offset > step / 2 {
+                    if offset > step * Layout.swapThreshold {
                         model.moveTab(from: index, to: index + 1)
                         dragConsumed += step
                         offset -= step
                     }
                 } else if offset < 0, index > 0 {
                     let step = Self.chipWidth(for: model.tabs[index - 1]) + Layout.tabGap
-                    if -offset > step / 2 {
+                    if -offset > step * Layout.swapThreshold {
                         model.moveTab(from: index, to: index - 1)
                         dragConsumed -= step
                         offset += step
@@ -278,6 +288,13 @@ extension TabStrip {
         static let closeSize: CGFloat = 12
         /// 手指头挪多远才算是在拖 tab 而不是在点它。
         static let dragThreshold: CGFloat = 5
+        /// 越过邻居多少才换位，按邻居宽度的比例算。
+        ///
+        /// **不能是 0.5。** 换位之后芯片的位置前进了一整格，位移要减掉同样一格，
+        /// 于是它当场落在「离新的左邻居正好半格」的地方 —— 反向条件刚好也在
+        /// 半格上，手稍微抖一下就来回换位。这就是用户报的「拖动的时候会抽动」。
+        /// 0.6 留出 0.2 格的余量，往回也得真的走过去才换。
+        static let swapThreshold: CGFloat = 0.6
     }
 
     /// 改名输入框该多宽：按当前草稿量，另留一点余量给光标。

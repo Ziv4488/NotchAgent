@@ -90,6 +90,14 @@ final class CLISession: NSObject, AgentSession, LocalProcessTerminalViewDelegate
         terminalView.send(txt: text)
     }
 
+    /// 按一下 ↑，跟用户自己在终端里按一样。
+    ///
+    /// 编码取决于终端当前是不是 application cursor 模式，从终端自己读
+    /// （见 `TerminalKeystroke.cursorUp`）—— 猜错了那串字节会被当成正文打进去。
+    func sendCursorUp() {
+        write(TerminalKeystroke.cursorUp(applicationMode: terminalView.getTerminal().applicationCursor))
+    }
+
     /// 一般不用手动调：SwiftTerm 在视图布局变化时会自己把新的 cols/rows 推给 PTY。
     /// 这个方法留给协议以及「岛被拖大了但视图还没重新布局」的场合。
     func resize(cols: Int, rows: Int) {

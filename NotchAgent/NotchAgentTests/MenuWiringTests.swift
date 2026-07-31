@@ -409,4 +409,22 @@ struct TerminalKeystrokeTests {
     func empty() {
         #expect(TerminalKeystroke.isEscape([UInt8]()[...]) == false)
     }
+
+    // MARK: - 往上挪一格（岛上那个「返回选项」）
+
+    /// 用哪种编码由对面的程序决定：application cursor 模式（DECCKM）下是
+    /// `ESC O A`，否则是 `ESC [ A`。发错那种会被当成一串普通字符打进输入框。
+    @Test("↑ 的两种编码")
+    func cursorUpEncodings() {
+        #expect(TerminalKeystroke.cursorUp(applicationMode: false) == "\u{1b}[A")
+        #expect(TerminalKeystroke.cursorUp(applicationMode: true) == "\u{1b}OA")
+    }
+
+    /// **这一下不能被当成 Esc。** 那会走「用户掐了这一轮」那条路，
+    /// 把整道题判成取消 —— 而他只是想退回选项列表。
+    @Test("↑ 不算 Esc", arguments: [false, true])
+    func cursorUpIsNotEscape(applicationMode: Bool) {
+        let bytes = Array(TerminalKeystroke.cursorUp(applicationMode: applicationMode).utf8)
+        #expect(TerminalKeystroke.isEscape(bytes[...]) == false)
+    }
 }

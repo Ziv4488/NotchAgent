@@ -190,6 +190,18 @@ final class IslandModel {
         TabStrip.measuredWidth(for: tabs)
     }
 
+    /// 岛的外形里跟 tab 有关的那一部分：**几个、多宽**。
+    ///
+    /// 岛的形变动画挂在它上面而不是挂在 `tabs` 上 —— 拖着 tab 换位置时
+    /// `tabs` 变了但外形没变，挂错了整条 tab 条会跟着弹簧一颠一颠（见 `IslandShell`）。
+    /// 两个字段都与顺序无关：个数是个数，宽度是各芯片宽度之和。
+    struct TabShape: Equatable {
+        var count: Int
+        var width: CGFloat
+    }
+
+    var tabShape: TabShape { TabShape(count: tabs.count, width: tabStripWidth) }
+
     var size: CGSize { metrics.size(for: state, tabStripWidth: tabStripWidth) }
 
     /// 岛的圆角。**底下挂着选项浮层时，底边是接缝，圆角要收掉。**
@@ -339,12 +351,17 @@ final class IslandModel {
     ///
     /// 起不来时**不建 tab**，只把错误挂出去 —— 建一个永远不会有内容的空 tab
     /// 比什么都不建更糟：用户会以为它在跑。
-    func startTask(in project: ProjectDirectory, instruction: String, resume: Bool = false) {
+    /// - Parameter at: 新 tab 插在第几位。默认追加到末尾；「继续上次会话」
+    ///   传原来那一位，好让它待在用户排好的地方（见 `resumeTab`）。
+    func startTask(in project: ProjectDirectory, instruction: String,
+                   resume: Bool = false, at insertion: Int? = nil) {
         guard let runtime else {
             // 没有 runtime 只会出现在预览和单元测试里。
             isComposingNewTask = false
-            debugStartSession(named: project.name)
-            selectedTabID = tabs.last?.id
+            debugStartSession(named: project.name, directory: project.path)
+            let new = tabs.last?.id
+            if let insertion, let last = tabs.indices.last { moveTab(from: last, to: insertion) }
+            selectedTabID = new
             return
         }
 
@@ -369,7 +386,7 @@ final class IslandModel {
                             accent: Self.accent(for: project.path),
                             directory: project.path,
                             activity: willWork ? "启动中" : nil)
-        tabs.append(tab)
+        tabs.insert(tab, at: min(insertion ?? tabs.count, tabs.count))
         selectedTabID = id
         send(.sessionStarted)
         persistTabs()
@@ -598,6 +615,20 @@ final class IslandModel {
         onInlineEntryEnded?()
     }
 
+    /// 从输入框**退回选项列表**。
+    ///
+    /// 发一下 ↑ —— 光标离开「Type something.」那一行，终端也就不再是输入态，
+    /// 下一拍扫描把选项重新报上来，浮层自己变回一排按钮。
+    ///
+    /// **不能用 Esc 代替**：那是「整道题取消」（屏幕上印着 Esc to cancel），
+    /// 用户要的只是「我不想自己打字了，还是从给的选项里挑」。
+    func backOutOfTextEntry() {
+        guard let id = selectedTab?.id else { return }
+        runtime?.sendCursorUp(to: id)
+        // 键盘还回去：接下来是一排按钮，用不着它。
+        onInlineEntryEnded?()
+    }
+
     /// 收起态那个输入框按了 Esc：原样发给终端。
     ///
     /// 屏幕上印着「Esc to cancel」，岛不能在中间把它拦掉变成别的意思 ——
@@ -620,14 +651,21 @@ final class IslandModel {
     /// 对一个已经结束的会话「继续上次会话」→ `claude --resume`。
     func resumeTab(_ id: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }),
-              let directory = tabs[index].directory, let runtime else { return }
+              let directory = tabs[index].directory else { return }
         let title = tabs[index].title
+        let count = tabs.count
         tabs.remove(at: index)
-        runtime.close(id)
+        runtime?.close(id)
+        // **插回原来那一位。** 早先是直接追加，于是一个开在最左边的老 tab
+        // 只要「继续上次会话」一次就窜到最右边去了（用户报的）。
+        // 顺序是他自己排的，重开一次不该把它打乱。
         startTask(in: ProjectDirectory(path: directory, lastUsed: .now, hasSessions: true),
-                  instruction: "", resume: true)
+                  instruction: "", resume: true, at: index)
+        // 起不来的话（找不到 claude 之类）什么都没插进来 —— 那就别去改别人的名字。
+        guard tabs.count == count, tabs.indices.contains(index) else { return }
         // startTask 用项目名当标题，这里把用户看惯的标题接回去。
-        if let last = tabs.indices.last { tabs[last].title = title }
+        tabs[index].title = title
+        persistTabs()
     }
 
     // MARK: - 持久化（spec 7）
@@ -657,11 +695,12 @@ final class IslandModel {
     // MARK: - 第 1 阶段的调试入口
 
     /// 造一个在跑的假会话。
-    func debugStartSession(named name: String) {
+    func debugStartSession(named name: String, directory: String? = nil) {
         let tab = IslandTab(title: name, kind: .cli, status: .running,
                             accent: Color(red: 0.85, green: 0.47, blue: 0.34),
                             usage: SessionUsage(contextUsed: 0.42, fiveHourUsed: 0.31,
-                                                weeklyUsed: 0.12, mode: .manual, subagents: 2))
+                                                weeklyUsed: 0.12, mode: .manual, subagents: 2),
+                            directory: directory)
         tabs.append(tab)
         if selectedTabID == nil { selectedTabID = tab.id }
         send(.sessionStarted)
