@@ -92,13 +92,13 @@ struct KeyRoutingTests {
 @Suite("收起时的焦点归还")
 struct FocusHandoffTests {
 
-    /// 正常情况：焦点在 A 时展开岛，收起还给 A。
-    @Test("岛还占着焦点时，还给展开前那个 app")
-    func restoresWhenIslandHasFocus() {
+    /// 正常情况：焦点在 A 时展开岛，中途没人来抢，收起还给 A。
+    @Test("没人来抢的话，收起还给展开前那个 app")
+    func restoresWhenNobodyElseTookOver() {
         var handoff = FocusHandoff()
         let app = NSRunningApplication.current
         handoff.remember(app)
-        #expect(handoff.appToRestore(islandIsFrontmost: true) === app)
+        #expect(handoff.appToRestore() === app)
     }
 
     /// 这就是用户报的那个 bug：焦点在 A 时展开，中途自己点去了 B，
@@ -107,7 +107,19 @@ struct FocusHandoffTests {
     func doesNotStealFocusBack() {
         var handoff = FocusHandoff()
         handoff.remember(NSRunningApplication.current)
-        #expect(handoff.appToRestore(islandIsFrontmost: false) == nil)
+        handoff.someoneElseTookOver()
+        #expect(handoff.appToRestore() == nil)
+    }
+
+    /// 用户可能来回切好几次：A → 展开 → B → C → 收起。
+    /// 每一次别人抢前台都作废，不是只作废第一次。
+    @Test("来回切好几个 app 也一样作废")
+    func staysForgottenAcrossSeveralSwitches() {
+        var handoff = FocusHandoff()
+        handoff.remember(NSRunningApplication.current)
+        handoff.someoneElseTookOver()
+        handoff.someoneElseTookOver()
+        #expect(handoff.appToRestore() == nil)
     }
 
     /// 记录只对这一次展开有效。留着的话，下一次「不该还」的收起会把上一次的
@@ -116,22 +128,27 @@ struct FocusHandoffTests {
     func forgetsAfterHandingBack() {
         var handoff = FocusHandoff()
         handoff.remember(NSRunningApplication.current)
-        _ = handoff.appToRestore(islandIsFrontmost: true)
-        #expect(handoff.appToRestore(islandIsFrontmost: true) == nil)
+        _ = handoff.appToRestore()
+        #expect(handoff.appToRestore() == nil)
     }
 
-    @Test("不还的那次也要清空")
-    func forgetsEvenWhenItDoesNotRestore() {
+    /// 作废之后再展开一次是全新的一轮，该记得住。
+    @Test("作废之后重新展开，照样记得住新的那个")
+    func remembersAgainAfterANewExpansion() {
         var handoff = FocusHandoff()
         handoff.remember(NSRunningApplication.current)
-        _ = handoff.appToRestore(islandIsFrontmost: false)
-        #expect(handoff.appToRestore(islandIsFrontmost: true) == nil)
+        handoff.someoneElseTookOver()
+        _ = handoff.appToRestore()
+
+        let app = NSRunningApplication.current
+        handoff.remember(app)
+        #expect(handoff.appToRestore() === app)
     }
 
     @Test("从没记过东西时收起不炸")
     func emptyHandoffIsHarmless() {
         var handoff = FocusHandoff()
-        #expect(handoff.appToRestore(islandIsFrontmost: true) == nil)
+        #expect(handoff.appToRestore() == nil)
     }
 }
 

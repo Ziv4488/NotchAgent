@@ -84,6 +84,19 @@ final class IslandWindowController {
                 MainActor.assumeIsolated { self?.beginSettling() }
             }
         }
+
+        // 展开期间用户自己点去了别的 app —— 收起时就不该再把焦点抢回来。
+        // 盯**事件**而不是收起那一刻的 `NSApp.isActive`：后者试过，实机上不成立。
+        workspace.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
+                              object: nil, queue: .main) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            let isSelf = app?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+            let name = app?.bundleIdentifier ?? app?.localizedName ?? "未知"
+            MainActor.assumeIsolated {
+                guard let self, !isSelf else { return }
+                self.window?.forgetFocusHandoff(because: name)
+            }
+        }
     }
 
     /// 当前 Space 被全屏窗口占据时刘海区归系统，岛让位（spec 3.4）。

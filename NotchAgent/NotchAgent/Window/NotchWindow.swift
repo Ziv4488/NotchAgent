@@ -6,9 +6,12 @@
 //
 
 import AppKit
+import OSLog
 import SwiftUI
 
 final class NotchWindow: NSPanel {
+
+    private let log = Logger(subsystem: "com.notchagent", category: "focus")
 
     /// 由外部决定当前是否允许成为 key —— 只有 expanded 态返回 true（spec 11.2）。
     var allowsKeyProvider: () -> Bool = { false }
@@ -61,7 +64,9 @@ final class NotchWindow: NSPanel {
 
     /// 展开时抢焦点。四步缺一不可（spec 11.2）。
     func takeFocus(firstResponder: NSView? = nil) {
-        handoff.remember(NSWorkspace.shared.frontmostApplication)
+        let previous = NSWorkspace.shared.frontmostApplication
+        log.info("展开：记下 \(previous?.bundleIdentifier ?? "无", privacy: .public)")
+        handoff.remember(previous)
         NSApp.activate()
         makeKeyAndOrderFront(nil)
         makeMain()
@@ -72,10 +77,36 @@ final class NotchWindow: NSPanel {
         raiseInputMethodWindows()
     }
 
-    /// 收起时把焦点交还给展开前那个 app。
+    /// 收起时把焦点交还给展开前那个 app。谁都不还是正常情况，见 `FocusHandoff`。
     func giveBackFocus() {
         orderFront(nil)
-        handoff.appToRestore(islandIsFrontmost: NSApp.isActive)?.activate()
+        let target = handoff.appToRestore()
+        log.info("收起：还给 \(target?.bundleIdentifier ?? "谁都不还", privacy: .public)")
+        target?.activate()
+    }
+
+    /// 展开期间别的 app 抢了前台，作废这次的焦点记录。
+    func forgetFocusHandoff(because app: String) {
+        log.info("别人抢了前台（\(app, privacy: .public)），这次不还焦点了")
+        handoff.someoneElseTookOver()
+    }
+
+    /// 在一个模态框（`NSOpenPanel` 之类）期间，把所有岛让到普通层级。
+    ///
+    /// 岛压在菜单栏之上（`statusBar + 1`），系统的文件选择框是个普通窗口，
+    /// 不让位就会被岛盖掉中间一大块 —— 实机上侧栏和按钮露在外面、文件列表被吞了。
+    ///
+    /// **反过来抬高 panel 的 level 是行不通的**：试过，`runModal()` 里被 AppKit
+    /// 重置了。我们只对自己的窗口说了算，所以让岛下去。降到 `.normal` 而不是藏起来：
+    /// 岛还看得见，只是不再压着模态框。
+    static func steppingAside<T>(_ body: () -> T) -> T {
+        let islands = NSApp.windows.compactMap { $0 as? NotchWindow }
+        let saved = islands.map(\.level)
+        for island in islands { island.level = .normal }
+        defer {
+            for (island, level) in zip(islands, saved) { island.level = level }
+        }
+        return body()
     }
 
     /// 把本进程里的输入法候选框抬到岛之上。

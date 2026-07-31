@@ -52,6 +52,7 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | 2.4 | 按 `⌘W` | 岛收起，焦点回到 2.1 里那个 app |
 | 2.4b | 新建表单里按 `Esc` | 退出新建流程。此时 first responder 是岛的输入框，没有终端在接键 |
 | 2.4c | **焦点在 A 时展开岛 → 点去 B → 收起岛** | 焦点**留在 B**。不该被弹回 A —— 展开期间用户自己选的窗口不能被收起动作撤销 |
+| 2.4d | 上一条不对时想确诊 | `log show --last 5m --info --predicate 'subsystem == "com.notchagent" AND category == "focus"'`。三行话：展开记下了谁、谁抢过前台、收起还给了谁 |
 | 2.5 | idle / running / notice 三态 | 全程不抢焦点，别的 app 打字不受影响 |
 
 ## 3. 屏幕几何
@@ -207,6 +208,7 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | 13.6 | **单击**别的 tab | 正常切换，不进编辑态 |
 | 13.7 | 收起态（notice）双击 tab | **不进编辑态**。那时岛宽是按标题量出来的，边改边量整块岛会抽 |
 | 13.8 | 新建表单里点「选择其他目录…」 | 系统文件选择框**完整浮在岛之上**，不被岛盖住一截 |
+| 13.8b | 关掉选择框之后 | 岛回到菜单栏之上（拿别的窗口盖过来试，岛仍在最前） |
 | 13.9 | 在选择框里选一个目录 | 目录被选中，回到表单，光标回到指令输入框 |
 
 ## 12. 持久化与退出
