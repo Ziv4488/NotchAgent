@@ -62,6 +62,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// v1 的任务是 app 的子进程，退出 app 就等于把它们全杀了 ——
     /// 这件事必须问，不能默默做掉。
+    ///
+    /// **必须让岛下去**，和文件选择框一个道理（见 `NotchWindow.steppingAside`）。
+    /// 岛压在 `statusBar + 1`（26）上，`NSAlert` 是 `.modalPanel`（8），展开态的画布
+    /// 又有 1368×835 那么大 —— 弹框正好整个落在它底下。实机上抓到过：
+    /// `layer=26 bounds=72,0 1368x835` 盖着 `layer=8 bounds=626,200 260x235`。
+    ///
+    /// 那时候 app 并没有崩，它在 `runModal()` 里等一个**看不见的**按钮：
+    /// 界面全无反应、菜单栏点退出也没用（已经在模态循环里了），只能去活动监视器强杀。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard runtime.hasLiveSessions else { return .terminateNow }
 
@@ -73,7 +81,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .warning
         // 岛是 LSUIElement，没有普通窗口，弹框默认可能出现在别的 app 后面。
         NSApp.activate(ignoringOtherApps: true)
-        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+        let response = NotchWindow.steppingAside { alert.runModal() }
+        return response == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
     func applicationWillTerminate(_ notification: Notification) {
