@@ -231,6 +231,10 @@ final class HookBridge {
         let matched: [String: Any] = ["matcher": "*", "hooks": [["type": "command", "command": forward]]]
         return [
             "SessionStart": [entry],
+            // 回合的真起点。没有它，岛只能拿 SessionStart 当「开始干活」——
+            // 可那只是「会话起来了、停在提示符前」，于是一个什么都没干的会话
+            // 会一直琥珀色慢呼吸、计时一直往上走，跟真的干活时长毫无关系。
+            "UserPromptSubmit": [entry],
             "PreToolUse": [matched],
             "PostToolUse": [matched],
             "Notification": [entry],

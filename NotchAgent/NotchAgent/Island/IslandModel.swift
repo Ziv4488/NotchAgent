@@ -149,11 +149,20 @@ final class IslandModel {
                       expandedContentHeight: expandedContentHeight)
     }
 
-    /// 「在等你回话」也算需要处理，和「跑完未读」一样应该把岛推到 notice 态 ——
-    /// 卡住等确认却什么都不显示，是最坏的一种沉默。
+    /// 「需要你处理」只由 `unread` 一个标志表示。
+    ///
+    /// 这里原本还加了 `|| $0.status == .waiting`，想的是「卡住等确认」也该催人。
+    /// 但那是把同一件事记在两个地方，而其中一个**没有人负责清掉**：
+    /// 权限询问来的时候 `demandsAttention` 已经把 `unread` 置上了，
+    /// `.waiting` 这一份纯属重复；等用户答完，`unread` 清了、`.waiting` 还挂着，
+    /// 于是 `unreadCount` 永远大于 0，岛再也回不到 idle —— 这就是「一直挂着通知态」。
+    ///
+    /// `.waiting` 现在只管画那个蓝点，不参与「该不该催人」的判断。
+    /// 但它要算进 `runningCount`：一个正等着你回话的会话是活的，
+    /// 收起时落到 idle 等于说「什么都没在进行」，那是假话。
     var context: IslandContext {
-        IslandContext(runningCount: tabs.filter { $0.status == .running }.count,
-                      unreadCount: tabs.filter { $0.unread || $0.status == .waiting }.count)
+        IslandContext(runningCount: tabs.filter { $0.status == .running || $0.status == .waiting }.count,
+                      unreadCount: tabs.filter(\.unread).count)
     }
 
     var selectedTab: IslandTab? {
@@ -201,10 +210,12 @@ final class IslandModel {
 
     private func applySideEffects(of event: IslandEvent) {
         switch event {
-        case .tabOpened:
-            if let id = selectedTabID, let index = tabs.firstIndex(where: { $0.id == id }) {
-                tabs[index].unread = false
-            }
+        // 点开 tab 是在看它，点开岛同样是 —— 而**光点岛不点 tab 是常态**：
+        // 通知弹出来时那个 tab 本来就是选中的，用户直接点岛就开始处理了。
+        // 早先只在 `.tabOpened` 清未读，于是这条最常走的路上未读永远清不掉，
+        // 岛此后每次收起都落回 notice。
+        case .tabOpened, .click:
+            markSelectedTabRead()
         case .allRead:
             for index in tabs.indices { tabs[index].unread = false }
         case .lastSessionEnded:
@@ -213,6 +224,13 @@ final class IslandModel {
         default:
             break
         }
+    }
+
+    /// 选中的那个 tab 算看过了。
+    private func markSelectedTabRead() {
+        guard let id = selectedTab?.id,
+              let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        tabs[index].unread = false
     }
 
     // MARK: - 展开态拖拽调整尺寸
@@ -322,9 +340,14 @@ final class IslandModel {
 
         isComposingNewTask = false
         launchError = nil
-        let tab = IslandTab(id: id, title: project.name, kind: .cli, status: .running,
+        // 带指令起的会话马上就要干活，不带的（比如 --resume）只是停在提示符前。
+        // 后者标成「在跑」就会琥珀色慢呼吸加计时，而它其实什么都没做。
+        let willWork = !instruction.isEmpty
+        let tab = IslandTab(id: id, title: project.name, kind: .cli,
+                            status: willWork ? .running : .done,
                             accent: Self.accent(for: project.path),
-                            directory: project.path, activity: "启动中")
+                            directory: project.path,
+                            activity: willWork ? "启动中" : nil)
         tabs.append(tab)
         selectedTabID = id
         send(.sessionStarted)
@@ -383,10 +406,12 @@ final class IslandModel {
             tabs[index].status = mapped
         }
 
-        // 已经在看着这个 tab 就别再标未读 —— 人就在跟前，催他是噪音。
+        // 已经在看着这个 tab 就别标未读 —— 人就在跟前，催他是噪音。
+        // 而且要**主动清掉**：他正看着的时候来的事，不该在他收起岛之后
+        // 变成一条等着他的未读。
         if signal.demandsAttention {
-            let watching = state == .expanded && selectedTabID == id
-            if !watching { tabs[index].unread = true }
+            let watching = state == .expanded && selectedTab?.id == id
+            tabs[index].unread = !watching
         }
 
         send(signal.demandsAttention ? .sessionStopped : .sessionProgress)
@@ -488,10 +513,14 @@ final class IslandModel {
     }
 
     /// 让最早那个还在跑的会话停下来问你 —— 用来看「询问」态长什么样。
+    ///
+    /// 连未读一起置上：真实路径里权限询问带着 `demandsAttention` 过来，
+    /// 那才是把岛推到 notice 的东西。调试入口不跟着置，测出来的就不是真行为。
     func debugAskOldestRunning() {
         guard let index = tabs.firstIndex(where: { $0.status == .running }) else { return }
         tabs[index].status = .waiting
-        send(.sessionProgress)
+        tabs[index].unread = true
+        send(.sessionStopped)
     }
 
     /// 直接摆到某个形态，供预览与手动测试。

@@ -41,9 +41,17 @@ enum StatusFeed {
 
         switch event.kind {
         case .sessionStart:
+            // **只认领这个会话，不动状态。**
+            // `SessionStart` 的意思是「进程起来了、停在提示符前」，不是「开始干活」。
+            // 早先在这里写 `.running`，结果一个什么都没干的会话状态点一直琥珀色
+            // 慢呼吸、计时一路往上走 —— 而那个数字跟任何真实的干活时长都对不上。
+            // 干活的起点是下面的 `userPromptSubmit`。
             signal.claudeSessionID = event.sessionID
+
+        case .userPromptSubmit:
+            // 回合真的开始了。计时从这一刻起算（见 IslandModel.apply 里的 startedAt）。
             signal.status = .running
-            signal.activity = "启动中"
+            signal.activity = "思考中"
 
         case .preToolUse:
             signal.status = .running

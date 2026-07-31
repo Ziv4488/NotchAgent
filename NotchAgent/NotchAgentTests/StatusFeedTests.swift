@@ -16,11 +16,24 @@ struct StatusFeedTests {
         return StatusFeed.signal(for: event)
     }
 
-    @Test("SessionStart：记下 Claude 的 session id，会话转在跑")
+    /// `SessionStart` 的意思是「进程起来了、停在提示符前」，不是「开始干活」。
+    /// 这里曾经写 `.running`，于是一个什么都没干的会话状态点一直琥珀色慢呼吸、
+    /// 计时一路往上走 —— 而那个数字跟任何真实的干活时长都对不上。
+    @Test("SessionStart 只认领会话，不把它标成在跑")
     func sessionStart() throws {
         let signal = try signal("session-start")
         #expect(signal.claudeSessionID?.isEmpty == false)
+        #expect(signal.status == nil)
+        #expect(signal.demandsAttention == false)
+    }
+
+    /// 回合的真起点。探针实测：SessionStart +1.7s，UserPromptSubmit +6.5s
+    /// （就是我按下回车那一刻），PreToolUse +10.6s。
+    @Test("UserPromptSubmit：回合开始，转在跑")
+    func userPromptSubmit() throws {
+        let signal = try signal("user-prompt-submit")
         #expect(signal.status == .running)
+        #expect(signal.activity == "思考中")
         #expect(signal.demandsAttention == false)
     }
 

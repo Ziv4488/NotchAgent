@@ -17,6 +17,8 @@ import Foundation
 struct HookEvent: Equatable {
     enum Kind: String, Equatable {
         case sessionStart = "SessionStart"
+        /// 用户按下回车、一个回合真的开始了。计时从这里起算。
+        case userPromptSubmit = "UserPromptSubmit"
         case preToolUse = "PreToolUse"
         case postToolUse = "PostToolUse"
         case notification = "Notification"

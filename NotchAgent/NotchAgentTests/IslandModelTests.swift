@@ -30,13 +30,100 @@ struct IslandModelTests {
         #expect(m.tabs[0].status == .waiting)
     }
 
-    @Test("等待中的会话算作待处理，但不算在跑")
-    func waitingCountsAsUnreadNotRunning() {
+    /// 一个正等着你回话的会话是**活的**。收起时落到 idle 等于说
+    /// 「什么都没在进行」，那是假话 —— 它就卡在那儿等你。
+    @Test("等待中的会话算在跑，未读来自询问本身")
+    func waitingCountsAsRunning() {
         let m = model()
         m.debugStartSession(named: "a")
         m.debugAskOldestRunning()
-        #expect(m.context.runningCount == 0)
+        #expect(m.context.runningCount == 1)
         #expect(m.context.unreadCount == 1)
+    }
+
+    /// 用户报的 bug：询问弹出来 → 展开 → 答完 → 收起，岛永远停在 notice，
+    /// 再也回不到 idle。
+    ///
+    /// 两处原因，都在这条路上：
+    /// 一是只有 `.tabOpened` 清未读，而**通知弹出来时那个 tab 本来就是选中的**，
+    /// 用户直接点岛开始处理，根本不会去点 tab —— 最常走的那条路清不掉未读；
+    /// 二是 `unreadCount` 还把 `.waiting` 算一份，那一份没有任何人负责清。
+    @Test("询问 → 点开岛 → 答完 → 收起，岛回得到 idle")
+    func answeringAPromptLetsTheIslandSettle() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        m.debugAskOldestRunning()
+        #expect(m.state == .notice)
+
+        // 用户点岛展开。注意：**没有点 tab** —— 它本来就是选中的。
+        m.send(.click)
+        #expect(m.state == .expanded)
+        #expect(m.tabs[0].unread == false)
+
+        // 在终端里答完，这一轮结束。
+        m.apply(SessionSignal(status: .idle, demandsAttention: true), to: m.tabs[0].id)
+        m.send(.dismiss)
+        #expect(m.state == .idle)
+    }
+
+    /// 人正看着这个 tab 的时候来的事，不该在他收起岛之后变成一条等着他的未读。
+    @Test("看着的时候完成，不留未读")
+    func finishingWhileWatchedLeavesNothingUnread() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        m.selectTab(m.tabs[0].id)
+        #expect(m.state == .expanded)
+
+        m.apply(SessionSignal(status: .idle, demandsAttention: true), to: m.tabs[0].id)
+        #expect(m.tabs[0].unread == false)
+        m.send(.dismiss)
+        #expect(m.state == .idle)
+    }
+
+    /// 没看的那个不能跟着一起清 —— 点开 A 不代表 B 的通知也处理过了。
+    @Test("只清看着的那个 tab 的未读，别人的留着")
+    func onlyTheSelectedTabIsMarkedRead() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        m.debugStartSession(named: "b")
+        for tab in m.tabs {
+            m.apply(SessionSignal(status: .idle, demandsAttention: true), to: tab.id)
+        }
+        #expect(m.tabs.filter(\.unread).count == 2)
+
+        m.selectTab(m.tabs[1].id)
+        #expect(m.tabs[0].unread)
+        #expect(m.tabs[1].unread == false)
+    }
+
+    // MARK: - 计时
+
+    /// 「时间跟实际运行没有任何关系」—— 因为它从会话起来那一刻开始算，
+    /// 而不是从这一轮开始算。计时要在每个回合开始时归零。
+    @Test("每个回合开始都把计时归零")
+    func timerRestartsEachTurn() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+
+        m.apply(SessionSignal(status: .idle), to: id)      // 上一轮结束
+        let afterStop = m.tabs[0].startedAt
+        m.apply(SessionSignal(status: .running), to: id)   // 新一轮开始
+        #expect(m.tabs[0].startedAt > afterStop)
+    }
+
+    /// 一轮之内工具事件密集，每条都归零的话计时永远在 0 附近跳。
+    @Test("一轮之内的工具事件不动计时")
+    func toolEventsDoNotRestartTheTimer() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+        m.apply(SessionSignal(status: .running), to: id)
+        let started = m.tabs[0].startedAt
+
+        m.apply(SessionSignal(status: .running, activity: "读 a.swift"), to: id)
+        m.apply(SessionSignal(status: .running), to: id)
+        #expect(m.tabs[0].startedAt == started)
     }
 
     @Test("右侧计时只跟在跑的会话，全停下就没有计时")

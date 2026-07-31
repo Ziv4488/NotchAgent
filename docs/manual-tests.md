@@ -178,6 +178,7 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | 10.2 | 在终端里直接打字 | 字进 Claude Code 自己的输入框。**这里没有岛的输入框** —— 有活会话时键盘整个归终端 |
 | 10.3 | 打 `/` | Claude Code 的斜杠命令菜单正常弹出、上下键能选 |
 | 10.4 | 让它做一件要权限的事（比如写 cwd 之外的文件） | 终端里弹出「Do you want to…」选单，**敲 `1` / `2` / `3` 直接生效**。岛这边同时转「等你回话」（蓝点快闪）并进 notice |
+| 10.4b | 接上条：**点岛展开**（不点 tab）→ 在终端里选「不允许」→ 收起岛 | 岛回到 idle。**不能一直挂在 notice** —— 通知弹出来时那个 tab 本来就是选中的，用户根本不会去点 tab，所以「点岛」这条路必须也算已读 |
 | 10.5 | 按 `Esc` | 当前这一轮停下，会话还在，可以接着说话。**岛不再拦这个键** |
 | 10.5b | 在 Claude Code 的选单里按 `Esc` | 选单关掉（屏幕上印的「Esc to cancel」是真的），**岛不收起** |
 | 10.5c | 连按两下 `Esc` | 进入 Claude Code 的历史回退，岛全程不插手 |
@@ -192,6 +193,9 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | 11.1 | 让会话跑一件要用好几个工具的事，盯住收起态状态带左侧 | 文案跟着变：「读 xxx」「改 xxx」「跑 npm test」。状态点琥珀色慢呼吸 |
 | 11.2 | 看那行字的末尾 | **绝不能出现四个点**（`xxx....`）。那是我们截一次、SwiftUI 又截一次的痕迹 |
 | 11.3 | 任务跑完 | 状态点转绿、岛进 notice、tab 上出现绿色对勾 |
+| 11.3b | **起一个会话但什么都不说**（`--args -debugTask <目录>`，不给 -debugPrompt） | 状态点**绿色不闪**、状态带显示项目名、**右侧没有计时**。`SessionStart` 只是「停在提示符前」，不是在干活 |
+| 11.3c | 在终端里发一条指令，看右侧计时 | 从**按下回车**那一刻起算（`UserPromptSubmit`），不是从会话起来那一刻。跑完停住 |
+| 11.3d | 同一个会话连着问第二个问题 | 计时**归零重来**，量的是这一轮不是这个 tab 开了多久 |
 | 11.4 | 岛**正展开着且看着这个 tab** 时任务跑完 | **不打未读对勾**（人就在跟前，不该再催） |
 | 11.5 | 把 app 退掉，只在终端里跑 `claude` | Claude Code 一切正常，**不报 hook 错误**。转发命令连不上时必须静默失败 |
 | 11.6 | 通道出问题时想确诊 | `log show --last 5m --info --predicate 'subsystem == "com.notchagent"'`，每条到达的事件都有一行。**`--info` 不能省**，否则查不到任何东西 |

@@ -60,7 +60,8 @@ struct HookBridgeTests {
     @Test("五个 hook 全都注册了 —— 少一个就有一种岛的状态永远不会亮")
     func registersEveryHook() {
         let hooks = HookBridge.hooks(socketPath: "/tmp/x.sock")
-        #expect(hooks.keys.sorted() == ["Notification", "PostToolUse", "PreToolUse", "SessionStart", "Stop"])
+        #expect(hooks.keys.sorted() == ["Notification", "PostToolUse", "PreToolUse",
+                                        "SessionStart", "Stop", "UserPromptSubmit"])
     }
 
     /// hook 命令非零退出会被 Claude Code 当成错误报给用户。
@@ -69,7 +70,7 @@ struct HookBridgeTests {
     func neverFails() throws {
         let hooks = HookBridge.hooks(socketPath: "/tmp/x.sock")
         let commands = try commandStrings(in: hooks)
-        #expect(commands.count == 5)
+        #expect(commands.count == hooks.count)
         for command in commands {
             #expect(command.hasSuffix("|| true"))
             #expect(command.contains("NOTCH_TAB"))
