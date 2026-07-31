@@ -381,6 +381,7 @@ final class IslandModel {
         runtime.onSignal = { [weak self] id, signal in self?.apply(signal, to: id) }
         runtime.onStatusChanged = { [weak self] id, status in self?.apply(status, to: id) }
         runtime.onMenu = { [weak self] id, menu in self?.apply(menu, to: id) }
+        runtime.onTurnCancelled = { [weak self] id in self?.cancelTurn(id) }
         if let size = runtime.preferences.expandedSize {
             expandedWidth = size.width.clamped(to: expandedWidthRange)
             expandedContentHeight = size.contentHeight.clamped(to: expandedContentHeightRange)
@@ -458,10 +459,10 @@ final class IslandModel {
 
     /// 终端上出现 / 消失了一道选择题。
     ///
-    /// **这条通道补的是 hook 补不上的洞。** 探针实测：`AskUserQuestion` 那种
-    /// 编号选单一个 hook 都不发，光靠事件岛根本不知道自己被问了话 ——
-    /// 它会一直显示「在跑」，而终端其实卡在那儿等人。所以看到选单就等于
-    /// 收到了一次「等你回话」，该催人就催人。
+    /// **这条通道补的是 hook 补不上的洞。** 探针实测：`AskUserQuestion` 只发
+    /// `PreToolUse`，**不发 `Notification`** —— 也就是没有任何事件说「它停下来等你了」。
+    /// 光靠 hook，岛会一直显示「在跑」，而终端其实卡在那儿等人。
+    /// 所以看到选单就等于收到了一次「等你回话」，该催人就催人。
     func apply(_ menu: TerminalMenu?, to id: SessionID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         let had = menus[id] != nil
@@ -472,6 +473,13 @@ final class IslandModel {
             tabs[index].activity = menu.question
             let watching = state == .expanded && selectedTab?.id == id
             tabs[index].unread = !watching
+            // 收起时选它。浮层只摆选中那个 tab 的题（岛下面只有一块地方），
+            // 别的 tab 在问话就得先切过去 —— 让用户自己去找是把「谁在问」
+            // 这件已经知道的事又推回给他。
+            //
+            // **展开时不切。** 那时候用户正看着某个 tab 的终端，
+            // 底下换成另一个会话，是把他从他手上的事情里拽走。
+            if state != .expanded { selectedTabID = id }
             send(.sessionStopped)
         } else if had {
             // 答完了。状态交回给 hook —— 那边紧接着就会来 PostToolUse / Stop。
@@ -480,6 +488,30 @@ final class IslandModel {
             tabs[index].activity = nil
             send(.sessionProgress)
         }
+    }
+
+    /// 用户按 Esc 把这一轮掐了。
+    ///
+    /// **这条路上没有别的信号。** 探针实测（`scripts/spike-escape.py`）：选单出现后
+    /// 按 Esc，`PostToolUse`、`Stop` 一条都不来，等 25 秒也没有。而选单一消失，
+    /// `apply(nil,to:)` 会按「答完了」把状态交回 `.running` —— 于是那个 tab
+    /// 永远琥珀色慢呼吸、计时一路往上涨。用户报的就是这个。
+    ///
+    /// 所以这里要**赶在扫描之前**把选单从记录里摘掉：`apply(nil,to:)` 只在
+    /// 「本来有」的时候才动状态，先摘掉，那一拍就成了空操作。
+    ///
+    /// 状态给 `.done` 而不是 `.ended`：会话还活着，只是这一轮没了。
+    func cancelTurn(_ id: SessionID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        menus[id] = nil
+        tabs[index].status = .done
+        tabs[index].activity = nil
+        // 是他自己按的 Esc，人就在跟前，不该再标一条未读回头催他。
+        tabs[index].unread = false
+        // **不是 `.sessionStopped`。** 那个事件一律弹 notice（「完成了，去看一眼」），
+        // 可这一轮是用户自己掐的，他刚看过 —— 弹出来催他去看他自己做的事，
+        // 正是那个「一直挂着通知态」的老毛病。这里只要重算形态。
+        send(.sessionProgress)
     }
 
     /// 用户在岛下方点了一项。把对应的数字键打进 PTY，跟他自己在终端里按一样。

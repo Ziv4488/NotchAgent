@@ -137,6 +137,60 @@ struct CLISessionTests {
         #expect(try String(contentsOf: output, encoding: .utf8) == id.uuidString)
     }
 
+    // MARK: - 看着打进 PTY 的键
+
+    /// Esc 得从真实的输入通道里认出来，不是从别处推断。
+    ///
+    /// 这条走的是完整链路：`send(txt:)` → `send(data:)` → delegate →
+    /// `ObservingTerminalView.send` → `TerminalKeystroke` → 回调。
+    /// 用户在终端里敲的键走的也是这一条，一模一样。
+    @Test("按 Esc 认得出来")
+    func reportsEscape() throws {
+        let session = session("sleep 5")
+        var escaped: [SessionID] = []
+        session.callbacks.onEscape = { escaped.append($0) }
+        try session.start()
+
+        session.interrupt()
+        #expect(escaped == [session.id])
+        session.terminate()
+    }
+
+    /// 在选单里按上下箭头挑选项、按数字作答，都**不是**取消。
+    /// 认错了的话，用户刚选完岛就宣布「这一轮结束了」。
+    @Test("别的按键不算 Esc")
+    func ordinaryKeysAreNotEscape() throws {
+        let session = session("sleep 5")
+        var escaped = 0
+        session.callbacks.onEscape = { _ in escaped += 1 }
+        try session.start()
+
+        session.write("2")
+        session.write("\r")
+        session.write("\u{1b}[A")   // ↑，跟 Esc 一样是 0x1b 打头
+        #expect(escaped == 0)
+        session.terminate()
+    }
+
+    /// **抄送不能改变行为。**「与真终端完全一致」是硬要求，
+    /// 观察者插在输入通道上，就得证明它一个字节都没吃掉。
+    @Test("抄送之后字节照样到得了子进程")
+    func observingDoesNotSwallowInput() async throws {
+        let output = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "notch-echo-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: output) }
+
+        let session = session("head -n 1 > '\(output.path)'")
+        try session.start()
+        try await Task.sleep(for: .milliseconds(300))
+        session.write("hi\r")
+        _ = await waitUntilDone(session)
+
+        let written = (try String(contentsOf: output, encoding: .utf8))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(written == "hi")
+    }
+
     // MARK: - 命令行拼装
 
     @Test("首个指令作为位置参数传进去，settings 也带上")

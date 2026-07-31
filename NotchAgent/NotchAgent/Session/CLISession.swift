@@ -30,7 +30,7 @@ final class CLISession: NSObject, AgentSession, LocalProcessTerminalViewDelegate
     /// Claude Code 自己的 session id，`SessionStart` hook 到达时才知道。
     private(set) var claudeSessionID: String?
 
-    let terminalView: LocalProcessTerminalView
+    let terminalView: ObservingTerminalView
     let callbacks = SessionCallbacks()
 
     private let launch: Launch
@@ -62,10 +62,17 @@ final class CLISession: NSObject, AgentSession, LocalProcessTerminalViewDelegate
         self.workingDirectory = workingDirectory
         self.launch = launch
         // 尺寸随后由 SwiftUI 那层布局决定；这里给个非零初值，避免 cols/rows 算成 0。
-        self.terminalView = LocalProcessTerminalView(frame: CGRect(x: 0, y: 0, width: 560, height: 320))
+        self.terminalView = ObservingTerminalView(frame: CGRect(x: 0, y: 0, width: 560, height: 320))
         super.init()
         terminalView.processDelegate = self
         terminalView.configureNativeColors()
+        // 键盘事件本来就在主线程上，这里只是把隔离说清楚。
+        terminalView.onSend = { [weak self] bytes in
+            MainActor.assumeIsolated {
+                guard let self, TerminalKeystroke.isEscape(bytes) else { return }
+                self.callbacks.onEscape?(self.id)
+            }
+        }
     }
 
     // MARK: - AgentSession
@@ -107,6 +114,9 @@ final class CLISession: NSObject, AgentSession, LocalProcessTerminalViewDelegate
     ///
     /// **不是 SIGINT。** Claude Code 的 TUI 把 `Esc` 定义成「停下这一轮但留着会话」，
     /// 而 `Ctrl-C` / SIGINT 在它那里是退出整个进程 —— 岛上的停止键要的是前者。
+    ///
+    /// 这一下同样会走 `onSend`，于是「岛上按停止」和「终端里按 Esc」
+    /// 在上层是同一条路 —— 本来也该是同一件事。
     func interrupt() {
         terminalView.send(txt: "\u{1b}")
     }

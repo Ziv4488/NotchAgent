@@ -72,4 +72,7 @@ protocol AgentSession: AnyObject, Identifiable {
 final class SessionCallbacks {
     var onStatusChanged: ((SessionID, SessionStatus) -> Void)?
     var onTitleChanged: ((SessionID, String) -> Void)?
+    /// 用户在终端里按了 Esc —— 这一轮到此为止（见 `TerminalKeystroke`）。
+    /// hook 通道在这条路上什么都不发，只有这一个信号。
+    var onEscape: ((SessionID) -> Void)?
 }

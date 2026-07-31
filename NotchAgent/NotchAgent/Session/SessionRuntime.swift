@@ -26,6 +26,9 @@ final class SessionRuntime {
     var onStatusChanged: ((SessionID, SessionStatus) -> Void)?
     /// 终端里摆出了一道选择题，或者刚才那道没了（nil）。
     var onMenu: ((SessionID, TerminalMenu?) -> Void)?
+    /// 用户按 Esc 把这一轮掐了。**hook 通道在这条路上一条事件都不发**
+    /// （`scripts/spike-escape.py` 实测），只有这一个信号说得出「它不跑了」。
+    var onTurnCancelled: ((SessionID) -> Void)?
 
     private let log = Logger(subsystem: "com.notchagent", category: "runtime")
 
@@ -98,6 +101,14 @@ final class SessionRuntime {
                             instruction: instruction, resume: resume))
         session.callbacks.onStatusChanged = { [weak self] id, status in
             self?.onStatusChanged?(id, status)
+        }
+        session.callbacks.onEscape = { [weak self] id in
+            guard let self else { return }
+            // 选单跟着 Esc 一起没了。**自己先忘掉**，别等下一拍扫描回来报
+            // 「选单没了」——那条路会把状态当成「答完了」重新交回 `.running`。
+            pendingMenus[id] = nil
+            reportedMenus[id] = nil
+            onTurnCancelled?(id)
         }
         store.add(session)
         try session.start()
