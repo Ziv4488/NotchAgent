@@ -233,6 +233,23 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | 14.9 | 正常输出里出现编号列表（比如让它列三条要点） | **不该弹浮层**。没有那行 `Esc to cancel` 就不是选单 |
 | 14.10 | 选单出来后按 **Esc** 不选 | 状态点转绿、计时停掉、浮层消失、岛落回 idle。**不许继续琥珀色呼吸** |
 | 14.11 | 干活干到一半在终端里按 Esc 打断 | 同上：这一轮到此为止，岛别再显示「在跑」 |
+| 14.12 | 看浮层和岛接的那条边 | **接成一整块**：同宽、贴边、只有最下面两个角是圆的。中间不许有缝 —— 缝里是桌面，读起来就成了两样东西 |
+
+> **「选项点不动」是怎么回事**：画布是整块最大态尺寸的透明窗口，命中测试收在岛的
+> 轮廓里（`NotchHostingView`），浮层挂在轮廓之外，得靠 `model.menuFrame` 单独放行。
+> 那个矩形之前一直是 `.zero`：位置本来是用 `PreferenceKey` 报上去的，而 `.background`
+> 里的 `preference(key:value:)` 根本传不到 `onPreferenceChange`。矩形是空的，
+> 命中测试就一律拒绝 —— 点在浮层上和点在空气上没有区别。
+>
+> 现在量完直接写回 model。坐标空间的名字也挪了位置：原先挂在里层的 VStack 上，
+> 原点是 VStack 的左上角，而 VStack 只有岛那么宽、在画布里居中 —— 报上去的 x
+> 比真实位置小了半个画布（实测差 488pt）。两处都由
+> `NotchHostingViewTests` 里那组浮层测试钉着。
+>
+> 整条路在实机上验过：合成一次真正的 AppKit 点击打在第 1 项上 →
+> `IslandModel.choose` → `1` 进 PTY → 终端里出现
+> `User answered Claude's questions: 晚饭吃什么？ → 面食`。顺带确认一件事：
+> 这类选单页脚虽然写着 `Enter to select`，**数字键是直接选中的**。
 
 > **为什么 Esc 要单独认**：探针实测（`scripts/spike-escape.py`），按 Esc 之后
 > Claude Code **一个 hook 都不发** —— `PostToolUse` 没有、`Stop` 没有，等 25 秒也没有。

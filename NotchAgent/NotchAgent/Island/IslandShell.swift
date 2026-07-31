@@ -7,12 +7,6 @@
 
 import SwiftUI
 
-/// 选项浮层在画布里的位置。窗口层拿它放行命中测试。
-private struct MenuFrameKey: PreferenceKey {
-    static let defaultValue: CGRect = .zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
-}
-
 struct IslandShell: View {
     @Bindable var model: IslandModel
 
@@ -25,30 +19,42 @@ struct IslandShell: View {
     private var canvasWidth: CGFloat { size.width + radii.inverted * 2 }
 
     var body: some View {
-        VStack(spacing: 6) {
+        // spacing 0：浮层贴着岛的底边长出来。中间留缝会露出桌面，
+        // 读起来就成了两样东西（用户报过一次「选项跟岛隔开了」）。
+        VStack(spacing: 0) {
             island
             // 终端在问话时，选项直接挂在岛下面点（spec 3.1）。
             // 窗口本来就按最大态尺寸开着（见 IslandMetrics.containerFrame），
             // 收起态下面这一大片是空的，正好放它。
             if let menu = model.pendingMenu, let id = model.selectedTab?.id {
-                MenuPanel(menu: menu) { model.choose($0, in: id) }
+                MenuPanel(menu: menu,
+                          width: size.width,
+                          joinRadius: radii.bottom) { model.choose($0, in: id) }
                     .transition(.opacity.combined(with: .move(edge: .top)))
                     // 命中测试被收在岛的轮廓里（见 NotchHostingView），
                     // 这块浮层在轮廓之外 —— 不把它的位置报上去，点了没反应。
+                    //
+                    // **不用 PreferenceKey。** 试过：`.background` 里的
+                    // `preference(key:value:)` 一路上传不到 `onPreferenceChange`，
+                    // `model.menuFrame` 从头到尾是 `.zero`，于是命中测试一律拒绝 ——
+                    // 用户报的「选项点不动」就是这么来的。这里改成量完直接写。
                     .background {
                         GeometryReader { proxy in
-                            Color.clear.preference(key: MenuFrameKey.self,
-                                                   value: proxy.frame(in: .named(Self.canvas)))
+                            let frame = proxy.frame(in: .named(Self.canvas))
+                            Color.clear
+                                .onAppear { model.menuFrame = frame }
+                                .onChange(of: frame) { _, new in model.menuFrame = new }
+                                .onDisappear { model.menuFrame = .zero }
                         }
                     }
             }
         }
-        .coordinateSpace(name: Self.canvas)
-        .onPreferenceChange(MenuFrameKey.self) { frame in
-            MainActor.assumeIsolated { model.menuFrame = frame }
-        }
         // 画布固定为最大态尺寸，岛在里面变形 —— 每帧改 NSWindow 的 frame 会抖。
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // 名字必须挂在**铺满画布**的那一层。挂在里面的 VStack 上，
+        // 原点会是 VStack 的左上角 —— VStack 只有岛那么宽、在画布里居中，
+        // 报上去的 x 就比真实位置小了半个画布。
+        .coordinateSpace(name: Self.canvas)
         .animation(IslandTheme.morph, value: model.state)
         .animation(IslandTheme.morph, value: model.tabs)
         .animation(IslandTheme.morph, value: model.pendingMenu)

@@ -95,4 +95,91 @@ struct NotchHostingViewTests {
         #expect(path.contains(viewPoint(view, fromTop: 6, x: view.bounds.midX)))
         #expect(path.contains(viewPoint(view, fromTop: 200, x: view.bounds.midX)))
     }
+
+    // MARK: - 挂在岛下面的选项浮层
+
+    /// 浮层落在岛的轮廓之外，靠 `model.menuFrame` 单独放行。
+    /// 那个矩形一旦和浮层的**真实**位置对不上，点上去就一点反应都没有 ——
+    /// 用户报的「选项不能点击」。
+    @Test("浮层报上来的位置就是它真实待的位置")
+    func menuFrameMatchesWhereThePanelIs() async throws {
+        let view = try await makeMenuView()
+        let frame = view.rootView.model.menuFrame
+
+        #expect(frame.isEmpty == false)
+        // 浮层在画布里居中，就该压在画布中线上。原点若是量错了参照物
+        // （比如取了岛那一层而不是整块画布），这里立刻差出半个画布。
+        #expect(abs(frame.midX - view.bounds.midX) < 0.5)
+        // 挂在岛下面，不该跑到岛上面去。
+        #expect(frame.minY > 0)
+    }
+
+    /// 浮层是从岛上长下来的，不是另一张卡片：**贴着岛的底边**、和岛主体同宽。
+    /// 中间只要有一道缝，缝里就是桌面，读起来立刻变成两样东西。
+    @Test("浮层贴着岛的底边，和岛一样宽")
+    func menuHangsFlushFromTheIsland() async throws {
+        let view = try await makeMenuView()
+        let model = view.rootView.model
+        let frame = model.menuFrame
+
+        #expect(abs(frame.minY - model.size.height) < 0.5)
+        #expect(abs(frame.width - model.size.width) < 0.5)
+    }
+
+    @Test("点得到浮层")
+    func menuPanelIsClickable() async throws {
+        let view = try await makeMenuView()
+        let frame = view.rootView.model.menuFrame
+        try #require(frame.isEmpty == false)
+
+        #expect(view.hitTest(hitPoint(view, at: CGPoint(x: frame.midX, y: frame.midY))) != nil)
+    }
+
+    /// 放行只针对浮层那一块。它左右两边仍是透明画布，得继续漏下去。
+    @Test("浮层两侧照旧不吃点击")
+    func besideTheMenuStillPassesThrough() async throws {
+        let view = try await makeMenuView()
+        let frame = view.rootView.model.menuFrame
+        try #require(frame.isEmpty == false)
+
+        #expect(view.hitTest(hitPoint(view, at: CGPoint(x: frame.minX - 20, y: frame.midY))) == nil)
+        #expect(view.hitTest(hitPoint(view, at: CGPoint(x: frame.maxX + 20, y: frame.midY))) == nil)
+    }
+}
+
+/// `hitTest` 的入参是父视图坐标系（y 朝上），量出来的浮层位置是画布自己的
+/// 坐标系（`NSHostingView` 是 flipped 的，y 朝下）—— 中间这一下换算不能省。
+@MainActor
+private func hitPoint(_ view: NSView, at pointInView: CGPoint) -> CGPoint {
+    view.convert(pointInView, to: view.superview)
+}
+
+/// 摆好一个「岛下面挂着选单」的画布。
+///
+/// **等的时候必须让出主线程**（`await`，不是 `RunLoop.run`）：
+/// 同时在跑的 PTY 测试也要主线程派活，把它占死那边就超时了。
+@MainActor
+private func makeMenuView() async throws -> NotchHostingView {
+    let model = IslandModel.previewModel(state: .notice)
+    model.apply(TerminalMenu(question: "晚饭吃什么？",
+                             options: [.init(number: 1, title: "麻辣香锅", detail: nil),
+                                       .init(number: 2, title: "日式拉面", detail: nil)],
+                             selected: 0),
+                to: model.tabs[0].id)
+    let view = NotchHostingView(rootView: IslandShell(model: model))
+    view.frame = CGRect(origin: .zero, size: model.metrics.containerFrame.size)
+    view.islandGeometry = { (model.size, model.cornerRadii) }
+    // 浮层是量出来的，得真的走一遍渲染 —— 光 layout 不够，
+    // 视图还必须挂在一个窗口上，`onAppear` 才会来。
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless],
+                          backing: .buffered, defer: false)
+    window.contentView = view
+    window.orderFront(nil)
+    view.layoutSubtreeIfNeeded()
+    view.displayIfNeeded()
+    // 量完才写回 model，等它写回来 —— 一到手就走，不空等。
+    for _ in 0..<100 where model.menuFrame.isEmpty {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    return view
 }

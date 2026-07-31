@@ -12,8 +12,16 @@ import SwiftUI
 ///
 /// **只在收起态出现。** 展开时终端本身就摆着那个选单，再叠一层浮层
 /// 是同一份东西显示两遍，而且两处的光标位置还可能对不上。
+///
+/// 它是从岛上**长下来**的，不是另外一张卡片：和岛主体同宽、贴着岛的底边、
+/// 只有最下面两个角是圆的。中间留一道缝会露出桌面，读起来就是两样东西。
 struct MenuPanel: View {
     let menu: TerminalMenu
+    /// 岛主体的宽度（不含两侧内凹圆弧占的边）。
+    var width: CGFloat = Layout.width
+    /// 岛底部的圆角半径。背景要往上多铺这么高去垫住那两个圆角 ——
+    /// 不垫的话接缝处会漏出两个小三角。
+    var joinRadius: CGFloat = 12
     var onChoose: (TerminalMenu.Option) -> Void
 
     var body: some View {
@@ -23,15 +31,15 @@ struct MenuPanel: View {
                 row(option)
             }
         }
-        .frame(width: Layout.width, alignment: .leading)
+        .frame(width: width, alignment: .leading)
         .padding(.vertical, 6)
         .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            UnevenRoundedRectangle(bottomLeadingRadius: joinRadius,
+                                   bottomTrailingRadius: joinRadius,
+                                   style: .continuous)
                 .fill(.black)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5)
-                }
+                // 往上钻进岛的底边里。两块都是纯黑，接出来是一整片。
+                .padding(.top, -joinRadius)
         }
     }
 
