@@ -143,6 +143,73 @@ struct MenuWiringTests {
         #expect(m.pendingMenu == nil)
     }
 
+    // MARK: - 选中「Type something.」之后
+
+    private let typing = TerminalMenu(question: "", options: [], selected: 0, wantsTextEntry: true)
+
+    /// 收起态下**没有键盘焦点**（窗口只有展开时才能成为 key）。终端等着一段自由输入，
+    /// 岛却还收着 —— 用户打字没反应，这就是他说的「卡住」。
+    @Test("终端等你打字：岛自己展开，把键盘交还给终端")
+    func textEntryExpandsTheIsland() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+        m.send(.dismiss)
+
+        m.apply(typing, to: id)
+        #expect(m.state == .expanded)
+        #expect(m.selectedTabID == id)
+        #expect(m.tabs[0].status == .waiting)
+    }
+
+    /// 输入态下屏幕上那些选项已经不是按钮了 —— 再按数字键是往输入框里打那个数字。
+    /// 浮层要是照旧摆着，用户点一下就往里打一个数字（实机上打出过「55534」）。
+    @Test("输入态不摆浮层")
+    func textEntryShowsNoPanel() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+        m.send(.dismiss)
+
+        m.apply(typing, to: id)
+        m.send(.dismiss)          // 用户又把岛收起来了
+        #expect(m.state != .expanded)
+        #expect(m.pendingMenu == nil)
+    }
+
+    /// 已经展开了就别再动 tab —— 用户正看着的那个不该被换掉（同 14.8b）。
+    @Test("展开态下的输入态不抢 tab")
+    func textEntryDoesNotStealTheTabWhileExpanded() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        m.debugStartSession(named: "b")
+        m.selectTab(m.tabs[0].id)
+        #expect(m.state == .expanded)
+
+        m.apply(typing, to: m.tabs[1].id)
+        #expect(m.selectedTabID == m.tabs[0].id)
+    }
+
+    // MARK: - 接缝
+
+    /// 浮层贴着岛的底边长出来，那条边是接缝不是外沿。岛留着圆角的话，
+    /// 接缝两侧会各露一个小缺口。
+    @Test("挂着浮层时，岛的底部圆角收掉")
+    func islandSquaresItsBottomForThePanel() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+        m.send(.dismiss)
+        let normal = m.cornerRadii.bottom
+        #expect(normal > 0)
+
+        m.apply(menu, to: id)
+        #expect(m.cornerRadii.bottom == 0)
+
+        m.apply(nil, to: id)
+        #expect(m.cornerRadii.bottom == normal)
+    }
+
     // MARK: - 按 Esc 不选
 
     /// **用户报的 bug。** 出选项后按 Esc 不选，琥珀色呼吸灯一直亮。

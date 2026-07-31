@@ -81,6 +81,40 @@ struct TerminalMenuTests {
         #expect(menu.selected == 0)
     }
 
+    // MARK: - 选中「Type something.」之后（输入态）
+
+    /// **用户报的 bug。** 在岛上点了「Type something.」，收起态没有键盘焦点，
+    /// 打字没反应；再点别的选项，数字全打进了那个输入框 —— 屏幕上出现「55534」。
+    ///
+    /// 样本是真跑出来的（`scripts/spike-textentry.py` 抓的那一屏，
+    /// 经 `visibleLines()` 取出）。它的选项**照旧画在屏幕上**，
+    /// 只有页脚多了一句 `ctrl+g to edit in Vim`。
+    @Test("输入态：认出来，而且一个选项都不带上来")
+    func textEntryCarriesNoOptions() throws {
+        let menu = try #require(TerminalMenu.parse(try ScreenFixtures.lines("type-something")))
+        #expect(menu.wantsTextEntry)
+        #expect(menu.options.isEmpty)
+    }
+
+    /// **收起态才是出事的那一档。** 岛里的终端那时只有六十出头列，页脚被折成两行：
+    /// `… · ctrl+g to edit in Vim · Esc` + `to cancel`。没有任何一行含
+    /// 「Esc to cancel」，`parse` 一路返回 nil —— 岛于是继续摆着那些
+    /// 已经不是按钮的选项，点一下就往输入框里打一个数字。
+    @Test("窄终端里页脚折了行，照样认得出输入态")
+    func textEntryWithWrappedFooter() throws {
+        let menu = try #require(TerminalMenu.parse(try ScreenFixtures.lines("type-something-narrow")))
+        #expect(menu.wantsTextEntry)
+        #expect(menu.options.isEmpty)
+    }
+
+    /// 页脚前半截和普通选单一模一样（`Enter to select · ↑/↓ to navigate`），
+    /// 所以不能靠「有没有 Enter to select」来分。这条钉住那个区别。
+    @Test("普通选单不是输入态")
+    func ordinaryMenuIsNotTextEntry() throws {
+        let menu = try #require(TerminalMenu.parse(try ScreenFixtures.lines("ask-user-question")))
+        #expect(menu.wantsTextEntry == false)
+    }
+
     // MARK: - 认不出来的一律返回 nil
 
     /// 这条是整套东西的底线。Claude Code 每次升级都可能改这些字，

@@ -1,0 +1,35 @@
+
+╭─── Claude Code v2.1.220 ───────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting started  │
+│                 Welcome back ZivL!                 │ Run /init to create a CL… │
+│                                                    │ ───────────────────────── │
+│                       ▐▛███▜▌                      │ What's new                │
+│                      ▝▜█████▛▘                     │ Bug fixes and reliabilit… │
+│                        ▘▘ ▝▝                       │ Added Claude Opus 5 (`cl… │
+│ Opus 5 with high effort · Claude Pro ·             │ Added `sandbox.network.s… │
+│ 82jwdtbxx8@privaterelay.appleid.com's Organization │ /release-notes for more   │
+│             ~/Desktop/Vibe/Agent灵动岛             │                           │
+╰────────────────────────────────────────────────────────────────────────────────╯
+
+ ⚠ 14 MCP servers need authentication · run /mcp
+
+❯ 用 AskUserQuestion                                                              
+  工具问我一个问题：晚饭吃什么，给三个选项，每个选项写一句说明。不要做别的事。    
+──────────────────────────────────────────────────────────────────────────────────
+ ☐ 晚饭 
+
+晚饭吃什么？
+
+  1. 日式拉面
+     热汤面配溏心蛋，暖胃又省事，一碗就能吃饱。
+  2. 麻辣香锅
+     自己挑菜，重口味解馋，适合想吃点刺激的时候。
+  3. 简餐沙拉
+     清爽低负担，吃完不撑，晚上还想干活时的好选择。
+❯ 4. Type something.
+──────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · ctrl+g to edit in Vim · Esc to cancel
+
+

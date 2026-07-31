@@ -191,7 +191,17 @@ final class IslandModel {
     }
 
     var size: CGSize { metrics.size(for: state, tabStripWidth: tabStripWidth) }
-    var cornerRadii: IslandCornerRadii { metrics.cornerRadii(for: state) }
+
+    /// 岛的圆角。**底下挂着选项浮层时，底边是接缝，圆角要收掉。**
+    ///
+    /// 留着圆角的话接缝两侧会各露一个小缺口；用浮层的背景往上盖住那两块，
+    /// 又会把 tab 条的下沿一起盖掉（用户报的「选项盖住通知态一点」）。
+    /// 让岛把圆角让出来、由浮层去圆最底下那两个角，两边都不用互相压。
+    var cornerRadii: IslandCornerRadii {
+        var radii = metrics.cornerRadii(for: state)
+        if pendingMenu != nil { radii.bottom = 0 }
+        return radii
+    }
 
     // MARK: - 事件
 
@@ -454,7 +464,10 @@ final class IslandModel {
     /// 展开时终端本身就摆着那个选单，再叠一层浮层是两份同样的东西。
     var pendingMenu: TerminalMenu? {
         guard state != .expanded, let id = selectedTab?.id else { return nil }
-        return menus[id]
+        // 输入态不摆浮层：那时候屏幕上的选项已经不是按钮，点一下是往输入框里
+        // 打一个数字。这种时候岛该展开，把键盘交还给终端（见 `apply`）。
+        guard let menu = menus[id], !menu.wantsTextEntry else { return nil }
+        return menu
     }
 
     /// 终端上出现 / 消失了一道选择题。
@@ -470,7 +483,21 @@ final class IslandModel {
 
         if let menu {
             tabs[index].status = .waiting
-            tabs[index].activity = menu.question
+            tabs[index].activity = menu.wantsTextEntry ? "等你打字" : menu.question
+
+            // 终端在等一段自由输入。收起态下**没有键盘焦点**（窗口只有展开时
+            // 才能成为 key），用户点了「Type something.」就卡在那儿：打字没反应，
+            // 再点别的选项，数字全打进了输入框里。
+            //
+            // 展开就是答案 —— 键盘归终端，跟他在真终端里打字一模一样。
+            if menu.wantsTextEntry {
+                // 展开时不换 tab —— 那会把用户从他手上的事情里拽走（同 14.8b）。
+                if state != .expanded {
+                    selectedTabID = id
+                    send(.click)
+                }
+                return
+            }
             let watching = state == .expanded && selectedTab?.id == id
             tabs[index].unread = !watching
             // 收起时选它。浮层只摆选中那个 tab 的题（岛下面只有一块地方），

@@ -28,6 +28,11 @@ struct TerminalMenu: Equatable {
     var options: [Option]
     /// 光标（`❯`）当前停在第几个，从 0 数起。
     var selected: Int
+    /// 终端已经不在让你选，而是在等你**打字**（选了「Type something.」那一类）。
+    ///
+    /// 这时候选项还画在屏幕上，但它们已经不是按钮了：再按数字键是往输入框里
+    /// 打那个数字。用户实机撞到过 —— 点了几下选项，输入框里出现「55534」。
+    var wantsTextEntry: Bool = false
 
     /// 选中某一项要往 PTY 里写的字节。
     ///
@@ -44,6 +49,12 @@ extension TerminalMenu {
     /// 而显示半个错的选单比不显示危险得多 —— 用户会照着它按键。
     static func parse(_ lines: [String]) -> TerminalMenu? {
         guard let footer = footerIndex(in: lines) else { return nil }
+
+        // 输入态：**一个选项都不往上带**。屏幕上那些行还在，但它们已经不是按钮了，
+        // 谁要是照着它画出能点的东西，点下去就是往输入框里打数字。
+        if isTextEntry(footerText(lines, at: footer)) {
+            return TerminalMenu(question: "", options: [], selected: 0, wantsTextEntry: true)
+        }
 
         // 序号是从 1 往下升的，所以「1.」那行就是选单的顶。
         // 从页脚往上找它，顺带把扫描范围框住 —— 选单不会有几十行高，
@@ -106,7 +117,38 @@ extension TerminalMenu {
     /// （权限询问是「Esc to cancel · Tab to amend」，AskUserQuestion 是
     /// 「Enter to select · ↑/↓ to navigate · Esc to cancel」），共同点只有前半句。
     private static func footerIndex(in lines: [String]) -> Int? {
-        lines.lastIndex { $0.contains("Esc to cancel") }
+        lines.indices.reversed().first { footerText(lines, at: $0).contains("Esc to cancel") }
+    }
+
+    /// 页脚那一行，**连着下一行一起看**。
+    ///
+    /// 收起态下岛里的终端只有六十出头列，长页脚会折行。实机上抓到过：
+    /// ```
+    /// Enter to select · ↑/↓ to navigate · ctrl+g to edit in Vim · Esc
+    /// to cancel
+    /// ```
+    /// 没有任何**一行**含「Esc to cancel」，`parse` 于是一路返回 nil ——
+    /// 选中「Type something.」之后岛什么都认不出来，只好继续摆着那些已经
+    /// 不是按钮的选项。样本见 `Fixtures/screens/type-something-narrow.txt`。
+    ///
+    /// 空白压成单个空格：屏幕右边是补齐的空格，直接拼会得到「Esc      to cancel」。
+    private static func footerText(_ lines: [String], at index: Int) -> String {
+        let pair = index + 1 < lines.count ? [lines[index], lines[index + 1]] : [lines[index]]
+        return pair.joined(separator: " ").split(separator: " ").joined(separator: " ")
+    }
+
+    /// 页脚上多出来的那句 Vim 提示 —— 只有当前这一项变成输入框时才会出现。
+    ///
+    /// 实测（`scripts/spike-textentry.py` + `Fixtures/screens/type-something.txt`）：
+    /// 选中「Type something.」之后页脚从
+    /// `Enter to select · ↑/↓ to navigate · Esc to cancel` 变成
+    /// `Enter to select · ↑/↓ to navigate · ctrl+g to edit in Vim · Esc to cancel`。
+    /// 前半截**没变**，所以不能靠「有没有 Enter to select」来分，只能认这一句。
+    ///
+    /// 认错了的代价是安全的一侧：岛会展开、把键盘交还给终端，用户照样能操作。
+    /// 认不出来才是危险的 —— 那就回到用户报的那个「点选项变成打数字」。
+    private static func isTextEntry(_ footer: String) -> Bool {
+        footer.contains("edit in Vim")
     }
 
     /// `❯ 1. Yes` / `  2. 川菜小炒` → (2, "川菜小炒")。

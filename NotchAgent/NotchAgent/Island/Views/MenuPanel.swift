@@ -19,10 +19,16 @@ struct MenuPanel: View {
     let menu: TerminalMenu
     /// 岛主体的宽度（不含两侧内凹圆弧占的边）。
     var width: CGFloat = Layout.width
-    /// 岛底部的圆角半径。背景要往上多铺这么高去垫住那两个圆角 ——
-    /// 不垫的话接缝处会漏出两个小三角。
-    var joinRadius: CGFloat = 12
+    /// 最底下那两个角的圆角半径 —— 岛原本的底部圆角，现在由浮层来圆。
+    ///
+    /// **上面两个角是方的，也不往上盖。** 早先试过让背景往上钻进岛的底边去垫住
+    /// 岛的圆角，结果把 tab 条的下沿一起盖掉了。现在改成岛那边把底部圆角收掉
+    /// （见 `IslandModel.cornerRadii`），谁都不用压谁。
+    var bottomRadius: CGFloat = 12
     var onChoose: (TerminalMenu.Option) -> Void
+
+    /// 鼠标停在哪一项上。终端里的光标是另一回事（`isSelected`），两者可以不在一处。
+    @State private var hovered: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -32,14 +38,12 @@ struct MenuPanel: View {
             }
         }
         .frame(width: width, alignment: .leading)
-        .padding(.vertical, 6)
+        .padding(.bottom, 6)
         .background {
-            UnevenRoundedRectangle(bottomLeadingRadius: joinRadius,
-                                   bottomTrailingRadius: joinRadius,
+            UnevenRoundedRectangle(bottomLeadingRadius: bottomRadius,
+                                   bottomTrailingRadius: bottomRadius,
                                    style: .continuous)
                 .fill(.black)
-                // 往上钻进岛的底边里。两块都是纯黑，接出来是一整片。
-                .padding(.top, -joinRadius)
         }
     }
 
@@ -85,12 +89,24 @@ struct MenuPanel: View {
             .padding(.vertical, 5)
             .background {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected(option) ? IslandTheme.tabActiveFill : Color.clear)
+                    .fill(fill(for: option))
                     .padding(.horizontal, 6)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // 能点的东西要看得出能点。没有这一下，鼠标扫过去毫无反应，
+        // 用户会以为浮层只是块显示。
+        .onHover { inside in
+            if inside { hovered = option.number }
+            else if hovered == option.number { hovered = nil }
+        }
+    }
+
+    /// 终端光标停着的那项最重（跟终端一致），鼠标底下的那项轻一档。
+    private func fill(for option: TerminalMenu.Option) -> Color {
+        if isSelected(option) { return IslandTheme.tabActiveFill }
+        return hovered == option.number ? IslandTheme.hoverTint : .clear
     }
 
     /// 终端里光标停在哪一项，岛上就高亮哪一项 —— 两边必须是同一个状态，

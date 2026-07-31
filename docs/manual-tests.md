@@ -234,6 +234,29 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | 14.10 | 选单出来后按 **Esc** 不选 | 状态点转绿、计时停掉、浮层消失、岛落回 idle。**不许继续琥珀色呼吸** |
 | 14.11 | 干活干到一半在终端里按 Esc 打断 | 同上：这一轮到此为止，岛别再显示「在跑」 |
 | 14.12 | 看浮层和岛接的那条边 | **接成一整块**：同宽、贴边、只有最下面两个角是圆的。中间不许有缝 —— 缝里是桌面，读起来就成了两样东西 |
+| 14.12b | 看接缝处的 tab 条 | tab 的圆角**完整**。浮层不许往上盖 —— 盖上去就把 tab 的下沿削平了 |
+| 14.13 | 鼠标在选项之间移动 | 指到哪一项，哪一项浅浅亮一层。终端光标停着的那项另有更重的一层，两者可以不在一处 |
+| 14.14 | 点「Type something.」（或「Chat about this」） | **岛自己展开**，键盘归终端，直接就能打字。浮层消失 |
+| 14.15 | 接上一条，打完字回车 | 和在真终端里打一样。**不许**出现「打字没反应」，也不许再点得到那些选项 |
+
+> **「点了 Type something 就卡住」**：那两项选中之后终端就不是在让你选了，而是在
+> 等一段自由输入。收起态**没有键盘焦点**（窗口只有展开时才能成为 key），于是打字
+> 没反应；更糟的是浮层还摆着，再点别的选项，数字全打进了那个输入框 ——
+> 用户实机上打出过「55534」。
+>
+> 认的办法是页脚。实测（`scripts/spike-textentry.py`）：
+> `Enter to select · ↑/↓ to navigate · Esc to cancel`
+> → `Enter to select · ↑/↓ to navigate · ctrl+g to edit in Vim · Esc to cancel`。
+> **前半截没变**，所以只能认那句 Vim 提示。认出来之后岛就展开，把键盘还给终端。
+>
+> 这里还带出一个更要命的洞：**收起态下岛里的终端只有六十出头列，长页脚会折行**：
+> ```
+> Enter to select · ↑/↓ to navigate · ctrl+g to edit in Vim · Esc
+> to cancel
+> ```
+> 没有任何**一行**含「Esc to cancel」，`parse` 一路返回 nil。页脚现在连着下一行
+> 一起看。两份样本都在 `Fixtures/screens/`（展开态一行的、收起态折行的），
+> 都是真跑出来、经 `visibleLines()` 取的。
 
 > **「选项点不动」是怎么回事**：画布是整块最大态尺寸的透明窗口，命中测试收在岛的
 > 轮廓里（`NotchHostingView`），浮层挂在轮廓之外，得靠 `model.menuFrame` 单独放行。

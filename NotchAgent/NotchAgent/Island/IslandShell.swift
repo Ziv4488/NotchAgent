@@ -27,9 +27,10 @@ struct IslandShell: View {
             // 窗口本来就按最大态尺寸开着（见 IslandMetrics.containerFrame），
             // 收起态下面这一大片是空的，正好放它。
             if let menu = model.pendingMenu, let id = model.selectedTab?.id {
+                // 底部圆角由浮层来圆 —— 岛这时候把自己的收成了 0（接缝要平）。
                 MenuPanel(menu: menu,
                           width: size.width,
-                          joinRadius: radii.bottom) { model.choose($0, in: id) }
+                          bottomRadius: model.constants.bottomCornerRadius) { model.choose($0, in: id) }
                     .transition(.opacity.combined(with: .move(edge: .top)))
                     // 命中测试被收在岛的轮廓里（见 NotchHostingView），
                     // 这块浮层在轮廓之外 —— 不把它的位置报上去，点了没反应。
