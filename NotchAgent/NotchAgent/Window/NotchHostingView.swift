@@ -26,6 +26,10 @@ final class NotchHostingView: NSHostingView<IslandShell> {
         fatalError("init(coder:) has not been implemented")
     }
 
+    /// 岛不是「先点亮自己、再干活」的窗口。app 在后台时点岛的第一下就该算数，
+    /// 而不是只用来把焦点拿回来（键盘那一半在 `NotchWindow.activateForClick`）。
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         // hitTest 收到的是父视图坐标系里的点。
         let local = convert(point, from: superview)

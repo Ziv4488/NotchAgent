@@ -25,6 +25,16 @@ struct FocusHandoff {
         previousApp = app
     }
 
+    /// 记录空着的时候才记 —— 用户在展开期间从别的 app 点回岛上时用。
+    ///
+    /// 那条路上记录刚被 `someoneElseTookOver()` 作废（他切走过一次），
+    /// 而他现在又主动把焦点交给了岛：收起时该还给他**刚才那个** app。
+    /// 不覆盖已有记录：展开那一刻记下的那个才是这一轮的起点。
+    mutating func rememberIfEmpty(_ app: NSRunningApplication?) {
+        guard previousApp == nil else { return }
+        previousApp = app
+    }
+
     /// 展开期间**别人**成了前台。
     ///
     /// 那是用户自己的选择，我们的记录当场作废 —— 收起岛不该顺手把它撤销。

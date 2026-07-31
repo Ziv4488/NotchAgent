@@ -31,6 +31,14 @@ final class IslandWindowController {
             guard let self, let window = self.window else { return }
             window.setFrame(self.model.metrics.containerFrame, display: true)
         }
+        // 收起态那个输入框用完了。展开态不还 —— 那时候键盘本来就该在岛上。
+        model.onInlineEntryEnded = { [weak self] in
+            guard let self, self.model.state != .expanded else { return }
+            self.window?.giveBackFocus()
+        }
+        model.onInlineEntryFocusRequested = { [weak self] in
+            self?.window?.claimKeyboard()
+        }
     }
 
     // MARK: - 生命周期
@@ -54,7 +62,13 @@ final class IslandWindowController {
             hosting.autoresizingMask = [.width, .height]
             hosting.islandGeometry = { [model] in (model.size, model.cornerRadii) }
             let panel = NotchWindow(contentView: hosting)
-            panel.allowsKeyProvider = { [weak self] in self?.model.state == .expanded }
+            // 收起态平时拿不了键盘（spec 11.2）。唯一的例外是岛下面那个浮层
+            // 变成了输入框：终端在等一段自由输入，用户点了框就该能直接打字，
+            // 不必先把岛展开。见 `IslandModel.wantsInlineTextEntry`。
+            panel.allowsKeyProvider = { [weak self] in
+                guard let self else { return false }
+                return self.model.state == .expanded || self.model.wantsInlineTextEntry
+            }
             window = panel
             hostingView = hosting
         }

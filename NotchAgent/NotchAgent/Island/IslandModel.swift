@@ -309,6 +309,17 @@ final class IslandModel {
         persistTabs()
     }
 
+    /// 把一个 tab 拖到另一个位置。
+    ///
+    /// **不落盘**：拖动过程中这个方法一格一格地被调，每格存一次是白敲磁盘。
+    /// 手松开时由视图层调 `persistTabs()`（见 `TabStrip.drag`）。
+    func moveTab(from source: Int, to destination: Int) {
+        guard tabs.indices.contains(source), tabs.indices.contains(destination),
+              source != destination else { return }
+        let tab = tabs.remove(at: source)
+        tabs.insert(tab, at: destination)
+    }
+
     // MARK: - 新建任务（spec 3.3）
 
     /// 一个 tab 都没有时，展开就应该直接落在新建流程上，不然岛是空的。
@@ -464,11 +475,19 @@ final class IslandModel {
     /// 展开时终端本身就摆着那个选单，再叠一层浮层是两份同样的东西。
     var pendingMenu: TerminalMenu? {
         guard state != .expanded, let id = selectedTab?.id else { return nil }
-        // 输入态不摆浮层：那时候屏幕上的选项已经不是按钮，点一下是往输入框里
-        // 打一个数字。这种时候岛该展开，把键盘交还给终端（见 `apply`）。
-        guard let menu = menus[id], !menu.wantsTextEntry else { return nil }
-        return menu
+        return menus[id]
     }
+
+    /// 浮层现在摆的是个输入框，而不是一排选项。
+    ///
+    /// 窗口层靠它决定收起态能不能拿键盘（`NotchWindow.canBecomeKey`）——
+    /// 平时收起态是拿不了的，那正是「点了 Type something. 之后打字没反应」的原因。
+    var wantsInlineTextEntry: Bool { pendingMenu?.wantsTextEntry == true }
+
+    /// 收起态的输入框用完了，键盘该还回去。窗口层接。
+    var onInlineEntryEnded: (() -> Void)?
+    /// 收起态的输入框被点了，把键盘拿过来。窗口层接。
+    var onInlineEntryFocusRequested: (() -> Void)?
 
     /// 终端上出现 / 消失了一道选择题。
     ///
@@ -479,25 +498,23 @@ final class IslandModel {
     func apply(_ menu: TerminalMenu?, to id: SessionID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         let had = menus[id] != nil
+        let hadTextEntry = menus[id]?.wantsTextEntry == true
         menus[id] = menu
+        // 那个输入框没了，键盘就该还给用户原来在用的 app —— 收起态的岛
+        // 只在「有个框在等他打字」的时候才占着键盘。
+        if hadTextEntry, menu?.wantsTextEntry != true { onInlineEntryEnded?() }
 
         if let menu {
             tabs[index].status = .waiting
             tabs[index].activity = menu.wantsTextEntry ? "等你打字" : menu.question
 
-            // 终端在等一段自由输入。收起态下**没有键盘焦点**（窗口只有展开时
-            // 才能成为 key），用户点了「Type something.」就卡在那儿：打字没反应，
-            // 再点别的选项，数字全打进了输入框里。
+            // 终端在等一段自由输入（用户选了「Type something.」那一类）。
             //
-            // 展开就是答案 —— 键盘归终端，跟他在真终端里打字一模一样。
-            if menu.wantsTextEntry {
-                // 展开时不换 tab —— 那会把用户从他手上的事情里拽走（同 14.8b）。
-                if state != .expanded {
-                    selectedTabID = id
-                    send(.click)
-                }
-                return
-            }
+            // 上一版是把岛**展开**：收起态窗口成不了 key，打字没反应，
+            // 再点别的选项，数字全打进了那个输入框。展开确实能用，但用户不要 ——
+            // 「不能不打开在直接在上面输入吗」。现在浮层自己变成一个输入框，
+            // 窗口在这段时间里允许成为 key（`wantsInlineTextEntry`），
+            // 用户点一下那个框就能打字，回车把整段送进 PTY。
             let watching = state == .expanded && selectedTab?.id == id
             tabs[index].unread = !watching
             // 收起时选它。浮层只摆选中那个 tab 的题（岛下面只有一块地方），
@@ -554,6 +571,41 @@ final class IslandModel {
     func submitToSelected(_ text: String) {
         guard let id = selectedTabID, let runtime else { return }
         runtime.write(text + "\r", to: id)
+    }
+
+    /// 收起态那个输入框回车：整段打进 PTY，然后把键盘还回去。
+    ///
+    /// **整段一次性发，不是逐字发。** 逐字发看起来更像真终端，但中文输入法
+    /// 组字期间的每一下都会被当成正文送出去。岛上这个框和真终端的差别只有
+    /// 「字先攒在岛上」这一处，回车之后终端收到的字节和他自己敲的一模一样。
+    func submitInlineText(_ text: String) {
+        guard let id = selectedTab?.id else { return }
+        runtime?.write(text, to: id)
+        // **回车必须单独发，而且要隔开一点。**
+        //
+        // 实机验过两次：`"noodles\r"` 一次写进去，终端收到的是
+        // `→ __other__`（空的自定义回答），正文整段丢了 —— Claude Code 的 TUI
+        // 是 Ink 写的，它把一次 stdin chunk 当成**一次按键**，末尾带 `\r`
+        // 的那一整块就只被当成一下回车。
+        //
+        // 分两次写、中间隔 80ms，正文先进框，回车再提交，和人手打是一样的。
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            self?.runtime?.write("\r", to: id)
+        }
+        // 不在这里清 menus：清不清由下一次扫描说了算（同 `choose`）。
+        // 但键盘现在就该还 —— 他已经答完了。
+        onInlineEntryEnded?()
+    }
+
+    /// 收起态那个输入框按了 Esc：原样发给终端。
+    ///
+    /// 屏幕上印着「Esc to cancel」，岛不能在中间把它拦掉变成别的意思 ——
+    /// 和展开态放行 Esc 是同一条规矩（见 `IslandWindowController.action`）。
+    func cancelInlineText() {
+        guard let id = selectedTab?.id else { return }
+        runtime?.write("\u{1b}", to: id)
+        onInlineEntryEnded?()
     }
 
     /// 关掉一个 tab：终止进程、移除、必要时回落状态。

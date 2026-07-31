@@ -107,6 +107,26 @@ struct TerminalMenuTests {
         #expect(menu.options.isEmpty)
     }
 
+    /// 岛上那个输入框头顶要写着在回答什么，所以问句照旧带上来。
+    @Test("输入态带着问句")
+    func textEntryKeepsTheQuestion() throws {
+        let menu = try #require(TerminalMenu.parse(try ScreenFixtures.lines("type-something")))
+        #expect(menu.question == "晚饭吃什么？")
+    }
+
+    /// **认输入态不能依赖正文解析成功。** 被选中的那一项这时已经变成输入框，
+    /// 排版随时可能和我们预期的不一样；一旦因此退回「认不出来」，
+    /// 岛就会继续摆着那些已经不是按钮的选项 —— 正是用户报的那个 bug。
+    @Test("正文认不出来时，输入态照样认得出")
+    func textEntrySurvivesAnUnparsableBody() {
+        let menu = TerminalMenu.parse([
+            "随便什么认不出来的东西",
+            "Enter to select · ctrl+g to edit in Vim · Esc to cancel",
+        ])
+        #expect(menu?.wantsTextEntry == true)
+        #expect(menu?.question == "")
+    }
+
     /// 页脚前半截和普通选单一模一样（`Enter to select · ↑/↓ to navigate`），
     /// 所以不能靠「有没有 Enter to select」来分。这条钉住那个区别。
     @Test("普通选单不是输入态")

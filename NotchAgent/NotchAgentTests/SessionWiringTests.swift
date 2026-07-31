@@ -170,6 +170,42 @@ struct SessionWiringTests {
         #expect(model.selectedTabID == model.tabs[0].id)
     }
 
+    // MARK: - 拖着 tab 换位置
+
+    @Test("拖到后面一格")
+    func movingTabForward() {
+        let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
+        model.debugStartSession(named: "a")
+        model.debugStartSession(named: "b")
+        model.moveTab(from: 0, to: 1)
+        #expect(model.tabs.map(\.title) == ["b", "a"])
+    }
+
+    /// 换了位不能顺手把「正看着哪个」也换掉 —— 用户只是在整理顺序。
+    @Test("换位不改变选中的是谁")
+    func movingKeepsTheSelection() {
+        let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
+        model.debugStartSession(named: "a")
+        model.debugStartSession(named: "b")
+        model.debugStartSession(named: "c")
+        let selected = model.tabs[2].id
+        model.selectTab(selected)
+
+        model.moveTab(from: 2, to: 0)
+        #expect(model.tabs[0].id == selected)
+        #expect(model.selectedTabID == selected)
+    }
+
+    /// 拖到两头之外时视图层照样会调进来（手还在往外拉）。
+    @Test("越界的换位是空操作", arguments: [(0, 5), (-1, 0), (0, 0)])
+    func outOfRangeMoveIsHarmless(source: Int, destination: Int) {
+        let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
+        model.debugStartSession(named: "a")
+        model.debugStartSession(named: "b")
+        model.moveTab(from: source, to: destination)
+        #expect(model.tabs.map(\.title) == ["a", "b"])
+    }
+
     /// 同一个项目每次开都该是同一个颜色，不然 tab 条上认不出老朋友。
     @Test("tab 底色按目录固定，同一个目录永远同一个颜色")
     func accentIsStable() {

@@ -49,12 +49,28 @@ extension TerminalMenu {
     /// 而显示半个错的选单比不显示危险得多 —— 用户会照着它按键。
     static func parse(_ lines: [String]) -> TerminalMenu? {
         guard let footer = footerIndex(in: lines) else { return nil }
+        let textEntry = isTextEntry(footerText(lines, at: footer))
+        let body = parseBody(lines, footer: footer)
 
         // 输入态：**一个选项都不往上带**。屏幕上那些行还在，但它们已经不是按钮了，
         // 谁要是照着它画出能点的东西，点下去就是往输入框里打数字。
-        if isTextEntry(footerText(lines, at: footer)) {
-            return TerminalMenu(question: "", options: [], selected: 0, wantsTextEntry: true)
+        //
+        // 问句还是带上（有就带）—— 岛上那个输入框总得说清楚在回答什么。
+        // 但**认输入态这件事不能依赖问句和选项解析成功**：那时候屏幕上被选中的
+        // 那一项已经变成输入框，排版随时可能不同，解析失败就退回「认不出来」，
+        // 也就退回用户报的那个「点选项变成打数字」。
+        if textEntry {
+            return TerminalMenu(question: body?.question ?? "", options: [],
+                                selected: 0, wantsTextEntry: true)
         }
+
+        guard let body else { return nil }
+        return TerminalMenu(question: body.question, options: body.options, selected: body.selected)
+    }
+
+    /// 选单正文：问句、选项、光标停在第几项。认不出来返回 nil。
+    private static func parseBody(_ lines: [String], footer: Int)
+        -> (question: String, options: [Option], selected: Int)? {
 
         // 序号是从 1 往下升的，所以「1.」那行就是选单的顶。
         // 从页脚往上找它，顺带把扫描范围框住 —— 选单不会有几十行高，
@@ -91,7 +107,7 @@ extension TerminalMenu {
         guard (2...Limits.maxOptions).contains(options.count) else { return nil }
         guard let question = question(above: top, in: lines) else { return nil }
 
-        return TerminalMenu(question: question, options: options, selected: selected)
+        return (question, options, selected)
     }
 
     // MARK: - 单行识别

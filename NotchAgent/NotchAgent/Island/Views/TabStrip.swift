@@ -14,6 +14,13 @@ struct TabStrip: View {
 
     /// 正在改名的那个 tab。同一时刻只可能有一个。
     @State private var editingTabID: UUID?
+    /// 正在被拖的那个 tab，以及它此刻相对本来位置的位移。
+    @State private var draggingID: UUID?
+    @State private var dragOffset: CGFloat = 0
+    /// 已经被「换过位」消化掉的那部分位移。见 `drag(_:)`。
+    @State private var dragConsumed: CGFloat = 0
+    /// 上一次点在哪个 tab 上、什么时候。双击靠它自己数（见 `tapped(_:)`）。
+    @State private var lastTap: (id: UUID, at: Date)?
 
     var body: some View {
         HStack(spacing: Layout.tabGap) {
@@ -25,19 +32,24 @@ struct TabStrip: View {
                             model.renameTab(tab.id, to: newTitle)
                             editingTabID = nil
                         },
-                        onCancel: { editingTabID = nil })
-                    // 双击的手势要挂在单击前面，否则单击先吃掉事件、双击永远不触发。
-                    .onTapGesture(count: 2) {
-                        // 收起态的 tab 条宽度是按标题量出来的（measuredWidth），
-                        // 在那儿改名会让整块岛跟着抽。只在展开态允许。
-                        guard model.state == .expanded else { return }
-                        model.selectTab(tab.id)
-                        editingTabID = tab.id
-                    }
-                    .onTapGesture {
-                        editingTabID = nil
-                        model.selectTab(tab.id)
-                    }
+                        onCancel: { editingTabID = nil },
+                        onClose: { model.closeTab(tab.id) })
+                    // **只有一条单击手势，双击自己数。**
+                    //
+                    // 用户报的「每个标签之间切换反应都很慢」就出在这里：原本是
+                    // `.onTapGesture(count: 2)` 叠一条 `.onTapGesture`，单击必须
+                    // 先等满系统的双击间隔、确认没有第二下才轮得到它。
+                    // 实测（`TEMPProbe`）：点下去到 tab 真的切过去 **363 ms**。
+                    //
+                    // 换成 `.simultaneousGesture` 也没用 —— 又量了一次，还是 363 ms。
+                    // 只要 SwiftUI 里存在一条 count: 2 的手势，单击就得等。
+                    // 所以干脆不要那条手势：单击当场生效，第二下来了再按间隔
+                    // 自己判成双击。改名照旧，切 tab 不再等任何东西。
+                    .onTapGesture { tapped(tab) }
+                    .offset(x: draggingID == tab.id ? dragOffset : 0)
+                    // 被拖的那个要压在别人上面，否则挪过去的一路上会被邻居切掉一半。
+                    .zIndex(draggingID == tab.id ? 1 : 0)
+                    .gesture(drag(tab))
             }
             Button(action: onNewTask) {
                 Text("＋")
@@ -53,6 +65,70 @@ struct TabStrip: View {
         .padding(.horizontal, Layout.stripHPadding)
         .frame(height: Layout.stripHeight)
     }
+
+    /// 点了一下某个 tab。
+    ///
+    /// 第一下**立刻**切过去；紧接着的第二下（同一个 tab、在系统的双击间隔内）
+    /// 才算双击 —— 那时切换已经发生过了，双击只要再进改名就行。
+    /// 这个顺序和「双击 = 单击 + 单击」在别处的行为是一致的。
+    private func tapped(_ tab: IslandTab) {
+        let now = Date()
+        let isDouble = lastTap.map {
+            $0.id == tab.id && now.timeIntervalSince($0.at) <= NSEvent.doubleClickInterval
+        } ?? false
+        lastTap = (tab.id, now)
+
+        model.selectTab(tab.id)
+        // 收起态的 tab 条宽度是按标题量出来的（measuredWidth），
+        // 在那儿改名会让整块岛跟着抽。只在展开态允许。
+        if isDouble, model.state == .expanded {
+            editingTabID = tab.id
+        } else if editingTabID != tab.id {
+            editingTabID = nil
+        }
+    }
+
+    /// 拖着 tab 换位置。
+    ///
+    /// 拖的时候只有**被拖的那个**跟着鼠标走；一旦越过邻居的一半，就当场
+    /// 换位（`moveTab`），同时把那一格的宽度记进 `dragConsumed` ——
+    /// 位移要减掉它，否则芯片已经挪到新位置了、偏移量却还从原点算，
+    /// 手一停它就飞出去一格。
+    ///
+    /// `minimumDistance` 不能是 0：那样单纯的点击也会被算成一次拖拽，
+    /// 切 tab 就点不动了。
+    private func drag(_ tab: IslandTab) -> some Gesture {
+        DragGesture(minimumDistance: Layout.dragThreshold)
+            .onChanged { value in
+                draggingID = tab.id
+                var offset = value.translation.width - dragConsumed
+                guard let index = model.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+
+                if offset > 0, index + 1 < model.tabs.count {
+                    let step = Self.chipWidth(for: model.tabs[index + 1]) + Layout.tabGap
+                    if offset > step / 2 {
+                        model.moveTab(from: index, to: index + 1)
+                        dragConsumed += step
+                        offset -= step
+                    }
+                } else if offset < 0, index > 0 {
+                    let step = Self.chipWidth(for: model.tabs[index - 1]) + Layout.tabGap
+                    if -offset > step / 2 {
+                        model.moveTab(from: index, to: index - 1)
+                        dragConsumed -= step
+                        offset += step
+                    }
+                }
+                dragOffset = offset
+            }
+            .onEnded { _ in
+                draggingID = nil
+                dragOffset = 0
+                dragConsumed = 0
+                // 顺序是用户排的，重启后得还是这个顺序。
+                model.persistTabs()
+            }
+    }
 }
 
 private struct TabChip: View {
@@ -61,8 +137,10 @@ private struct TabChip: View {
     var isEditing = false
     var onCommit: (String) -> Void = { _ in }
     var onCancel: () -> Void = {}
+    var onClose: () -> Void = {}
 
     @State private var draft = ""
+    @State private var hovered = false
     @FocusState private var fieldFocused: Bool
 
     var body: some View {
@@ -76,6 +154,7 @@ private struct TabChip: View {
                     .foregroundStyle(isSelected ? IslandTheme.bright : Color.white.opacity(0.5))
                     .lineLimit(1)
             }
+            closeButton
         }
         .padding(.horizontal, TabStrip.Layout.chipHPadding)
         .padding(.vertical, TabStrip.Layout.chipVPadding)
@@ -90,11 +169,33 @@ private struct TabChip: View {
             }
         }
         .contentShape(Rectangle())
+        .onHover { hovered = $0 }
         .onChange(of: isEditing, initial: true) { _, editing in
             guard editing else { return }
             draft = tab.title
             fieldFocused = true
         }
+    }
+
+    /// 关掉这个会话。
+    ///
+    /// **位置永远留着，只是平时不画**（`opacity`，不是 `if`）。收起态的岛宽
+    /// 是按 tab 条量出来的（`TabStrip.measuredWidth`），让这个按钮时有时无，
+    /// 鼠标一扫过去整块岛就跟着变宽 —— 那比多留 12pt 难受得多。
+    private var closeButton: some View {
+        Button(action: onClose) {
+            Image(systemName: "xmark")
+                .font(.system(size: 7, weight: .bold))
+                .foregroundStyle(Color.white.opacity(0.75))
+                .frame(width: TabStrip.Layout.closeSize, height: TabStrip.Layout.closeSize)
+                .background {
+                    Circle().fill(Color.white.opacity(hovered ? 0.16 : 0))
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(hovered || isSelected ? 1 : 0)
+        .help("关闭这个会话")
     }
 
     /// 原地改名。回车确认，Esc 放弃。
@@ -173,6 +274,9 @@ extension TabStrip {
         static let plusHPadding: CGFloat = 7
         static let iconSize: CGFloat = 14
         static let minFieldWidth: CGFloat = 44
+        static let closeSize: CGFloat = 12
+        /// 手指头挪多远才算是在拖 tab 而不是在点它。
+        static let dragThreshold: CGFloat = 5
     }
 
     /// 改名输入框该多宽：按当前草稿量，另留一点余量给光标。
@@ -197,13 +301,20 @@ extension TabStrip {
     ///
     /// 用 AppKit 量文字宽度，比让 SwiftUI 先渲染再回读尺寸简单，
     /// 也避免了「量完再改宽度」这一帧的布局抖动。
+    /// 一个芯片渲染出来有多宽。拖拽换位靠它算「越过邻居没有」。
+    ///
+    /// 关闭按钮**始终**算进来 —— 它平时透明但占着位置（见 `closeButton`）。
+    static func chipWidth(for tab: IslandTab) -> CGFloat {
+        let textWidth = (tab.title as NSString).size(withAttributes: [.font: titleFont]).width
+        return Layout.chipHPadding * 2 + Layout.iconSize + 5 + ceil(textWidth)
+            + 5 + Layout.closeSize
+    }
+
     static func measuredWidth(for tabs: [IslandTab]) -> CGFloat {
         var width = Layout.stripHPadding * 2
 
         for tab in tabs {
-            let textWidth = (tab.title as NSString)
-                .size(withAttributes: [.font: titleFont]).width
-            width += Layout.chipHPadding * 2 + Layout.iconSize + 5 + ceil(textWidth)
+            width += chipWidth(for: tab)
             width += Layout.tabGap
         }
 

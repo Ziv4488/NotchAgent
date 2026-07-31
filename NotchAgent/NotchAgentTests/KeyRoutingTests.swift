@@ -150,6 +150,29 @@ struct FocusHandoffTests {
         var handoff = FocusHandoff()
         #expect(handoff.appToRestore() == nil)
     }
+
+    /// 用户切走过一次（记录作废），又从那个 app 点回岛上 ——
+    /// 收起时该还给他刚才那个，而不是谁都不还。
+    @Test("作废之后他又点回岛上，那就记下他现在待的那个")
+    func remembersWhenTheUserClicksBack() {
+        var handoff = FocusHandoff()
+        handoff.remember(NSRunningApplication.current)
+        handoff.someoneElseTookOver()
+
+        let app = NSRunningApplication.current
+        handoff.rememberIfEmpty(app)
+        #expect(handoff.appToRestore() === app)
+    }
+
+    /// 展开那一刻记下的那个才是这一轮的起点，点击不该把它顶掉。
+    @Test("已经记着东西时不覆盖")
+    func doesNotOverwriteAnExistingRecord() {
+        var handoff = FocusHandoff()
+        let first = NSRunningApplication.current
+        handoff.remember(first)
+        handoff.rememberIfEmpty(nil)
+        #expect(handoff.appToRestore() === first)
+    }
 }
 
 @Suite("改名输入框的宽度")
@@ -185,5 +208,26 @@ struct RenameFieldWidthTests {
             IslandTab(title: "一个长得多的名字", kind: .cli, status: .done, accent: .blue),
         ]
         #expect(TabStrip.measuredWidth(for: tabs) > TabStrip.measuredWidth(for: [tabs[0]]))
+    }
+
+    /// 关闭按钮平时是透明的，但**始终占着位置**。量宽度时漏掉它，
+    /// 收起态的岛就比 tab 条窄，最后那个 tab 会被切掉一块。
+    @Test("量宽度把关闭按钮算进去")
+    func chipWidthIncludesTheCloseButton() {
+        let tab = IslandTab(title: "a", kind: .cli, status: .running, accent: .red)
+        let text = ("a" as NSString).size(withAttributes: [.font: TabStrip.titleFont]).width
+        let withoutClose = TabStrip.Layout.chipHPadding * 2 + TabStrip.Layout.iconSize + 5 + ceil(text)
+        #expect(TabStrip.chipWidth(for: tab) >= withoutClose + TabStrip.Layout.closeSize)
+    }
+
+    /// 拖拽换位是拿这个宽度算「越过邻居没有」的，它必须和 tab 条量出来的一致。
+    @Test("tab 条的宽度就是各芯片宽度加起来")
+    func stripWidthIsTheSumOfItsChips() {
+        let tabs = [
+            IslandTab(title: "a", kind: .cli, status: .running, accent: .red),
+            IslandTab(title: "第二个", kind: .cli, status: .done, accent: .blue),
+        ]
+        let chips = tabs.reduce(0) { $0 + TabStrip.chipWidth(for: $1) + TabStrip.Layout.tabGap }
+        #expect(TabStrip.measuredWidth(for: tabs) > chips)
     }
 }

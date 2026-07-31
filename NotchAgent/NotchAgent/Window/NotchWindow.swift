@@ -120,8 +120,33 @@ final class NotchWindow: NSPanel {
     }
 
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown { claimKeyboard() }
         super.sendEvent(event)
         // 候选框是打字过程中才出现的，每次按键后都补一次。
         if event.type == .keyDown { raiseInputMethodWindows() }
+    }
+
+    /// 点岛的那一下，**同时**就把键盘拿回来。
+    ///
+    /// 用户报的：「焦点返回的时候要先把焦点切回岛，再进行操作」—— 两下才成一件事。
+    /// 原因是岛是 `.nonactivatingPanel`：点它不激活 app，所以点击本身照常送达
+    /// （SwiftUI 的按钮、终端的选区都有反应），但**键盘还在别人那儿** ——
+    /// 于是「点一下没反应」的其实是接下来的打字。用户于是学会了先点一下、再操作。
+    ///
+    /// 这里在事件下发**之前**激活：同一下点击既拿到键盘，也照常被下面的视图收到。
+    ///
+    /// 只在本来就该拿键盘的时候做（展开态，或收起态挂着输入框）——
+    /// 收起态点岛只是展开，那条路上的焦点由 `takeFocus()` 负责，不该在这里抢。
+    func claimKeyboard() {
+        guard allowsKeyProvider() else { return }
+        if !NSApp.isActive {
+            // 他是从某个 app 点过来的，收起时该还给那个 app（见 `FocusHandoff`）。
+            handoff.rememberIfEmpty(NSWorkspace.shared.frontmostApplication)
+            NSApp.activate()
+        }
+        if !isKeyWindow {
+            makeKeyAndOrderFront(nil)
+            makeMain()
+        }
     }
 }

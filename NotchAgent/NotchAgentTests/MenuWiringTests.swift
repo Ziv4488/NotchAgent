@@ -145,36 +145,132 @@ struct MenuWiringTests {
 
     // MARK: - 选中「Type something.」之后
 
-    private let typing = TerminalMenu(question: "", options: [], selected: 0, wantsTextEntry: true)
+    private let typing = TerminalMenu(question: "晚饭吃什么？", options: [],
+                                      selected: 0, wantsTextEntry: true)
 
-    /// 收起态下**没有键盘焦点**（窗口只有展开时才能成为 key）。终端等着一段自由输入，
-    /// 岛却还收着 —— 用户打字没反应，这就是他说的「卡住」。
-    @Test("终端等你打字：岛自己展开，把键盘交还给终端")
-    func textEntryExpandsTheIsland() {
+    /// **用户说的：「不能不打开在直接在上面输入吗？」**
+    ///
+    /// 上一版是把岛展开（收起态窗口成不了 key，不展开就打不了字）。
+    /// 现在浮层自己变成输入框，岛**留在收起态**。
+    @Test("终端等你打字：岛不展开，浮层变成输入框")
+    func textEntryKeepsTheIslandCollapsed() {
         let m = model()
         m.debugStartSession(named: "a")
         let id = m.tabs[0].id
         m.send(.dismiss)
 
         m.apply(typing, to: id)
-        #expect(m.state == .expanded)
+        #expect(m.state != .expanded)
+        #expect(m.pendingMenu?.wantsTextEntry == true)
         #expect(m.selectedTabID == id)
         #expect(m.tabs[0].status == .waiting)
+        #expect(m.tabs[0].activity == "等你打字")
+    }
+
+    /// 收起态平时**拿不了键盘**（`NotchWindow.canBecomeKey` 只在展开态为真）。
+    /// 那正是用户报的「点了 Type something. 就卡住」的成因。
+    /// 摆着输入框的这段时间是唯一的例外。
+    @Test("摆着输入框的时候，窗口才够格拿键盘")
+    func inlineEntryUnlocksTheKeyboard() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+        m.send(.dismiss)
+        #expect(m.wantsInlineTextEntry == false)
+
+        m.apply(typing, to: id)
+        #expect(m.wantsInlineTextEntry)
+
+        m.apply(nil, to: id)
+        #expect(m.wantsInlineTextEntry == false)
     }
 
     /// 输入态下屏幕上那些选项已经不是按钮了 —— 再按数字键是往输入框里打那个数字。
-    /// 浮层要是照旧摆着，用户点一下就往里打一个数字（实机上打出过「55534」）。
-    @Test("输入态不摆浮层")
-    func textEntryShowsNoPanel() {
+    /// 照着它们画出能点的东西，用户点一下就往框里打一个数字（实机上打出过「55534」）。
+    @Test("输入态一个选项都不摆")
+    func textEntryShowsNoOptions() {
         let m = model()
         m.debugStartSession(named: "a")
         let id = m.tabs[0].id
         m.send(.dismiss)
 
         m.apply(typing, to: id)
-        m.send(.dismiss)          // 用户又把岛收起来了
-        #expect(m.state != .expanded)
+        #expect(m.pendingMenu?.options.isEmpty == true)
+    }
+
+    /// 展开时终端本身就在等你打字，岛不必再摆一个框 —— 两个光标抢一份键入。
+    @Test("展开态照旧不给浮层")
+    func textEntryGivesNoPanelWhileExpanded() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+        m.apply(typing, to: id)
+        m.send(.click)
+        #expect(m.state == .expanded)
         #expect(m.pendingMenu == nil)
+        #expect(m.wantsInlineTextEntry == false)
+    }
+
+    /// 框没了，键盘就该还给用户原来在用的那个 app —— 收起态的岛只在
+    /// 「有个框在等他打字」的时候才占着键盘。
+    @Test("框一消失就把键盘还回去")
+    func endingTextEntryReleasesTheKeyboard() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+        m.send(.dismiss)
+        var released = 0
+        m.onInlineEntryEnded = { released += 1 }
+
+        m.apply(typing, to: id)
+        #expect(released == 0)
+        m.apply(nil, to: id)
+        #expect(released == 1)
+    }
+
+    /// 普通选单来去不该动键盘归属 —— 那时候岛压根没在收键盘。
+    @Test("普通选单消失不触发焦点归还")
+    func ordinaryMenuDoesNotReleaseTheKeyboard() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+        m.send(.dismiss)
+        var released = 0
+        m.onInlineEntryEnded = { released += 1 }
+
+        m.apply(menu, to: id)
+        m.apply(nil, to: id)
+        #expect(released == 0)
+    }
+
+    /// 回车送完那一段，键盘当场还回去 —— 他已经答完了，没理由再占着。
+    @Test("送出之后立刻还焦点")
+    func submittingReleasesTheKeyboard() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+        m.send(.dismiss)
+        m.apply(typing, to: id)
+        var released = 0
+        m.onInlineEntryEnded = { released += 1 }
+
+        m.submitInlineText("面食")
+        #expect(released == 1)
+    }
+
+    /// 屏幕上印着「Esc to cancel」，岛不能在中间把它拦掉变成别的意思。
+    @Test("框里按 Esc 也把键盘还回去")
+    func cancellingReleasesTheKeyboard() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+        m.send(.dismiss)
+        m.apply(typing, to: id)
+        var released = 0
+        m.onInlineEntryEnded = { released += 1 }
+
+        m.cancelInlineText()
+        #expect(released == 1)
     }
 
     /// 已经展开了就别再动 tab —— 用户正看着的那个不该被换掉（同 14.8b）。
