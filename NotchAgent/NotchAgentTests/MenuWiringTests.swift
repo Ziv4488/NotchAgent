@@ -135,6 +135,70 @@ struct MenuWiringTests {
         #expect(m.pendingMenu != nil)
     }
 
+    // MARK: - 在岛上答完之后，岛要**收得回去**
+
+    /// 用户 2026-08-01 报的：「输入完后只会进入通知态，没有完全收起，包括选择也是」。
+    ///
+    /// 未读那一条的意思是「有人在等你回话，回头去看一眼」。他刚刚就在跟前、
+    /// 亲手在浮层上答完了 —— 再留着未读就是催他去看他自己做过的事，
+    /// 于是浮层收掉之后岛卡在 notice 再也不肯回 running / idle。
+    @Test("在浮层上答完，未读就该清掉", arguments: [0, 1, 2])
+    func answeringOnTheIslandClearsUnread(option: Int) {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+
+        m.apply(menu, to: id)
+        #expect(m.tabs[0].unread)
+        #expect(m.state == .notice)
+
+        m.choose(menu.options[option], in: id)
+        #expect(!m.tabs[0].unread)
+        #expect(m.state != .notice)
+    }
+
+    /// 打字那条路同样 —— 而且用户第一次报的就是这一条。
+    @Test("输入框回车之后，未读也该清掉")
+    func submittingInlineTextClearsUnread() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+
+        m.apply(typing, to: id)
+        #expect(m.tabs[0].unread)
+        #expect(m.state == .notice)
+
+        m.submitInlineText("noodles")
+        #expect(!m.tabs[0].unread)
+        #expect(m.state != .notice)
+    }
+
+    /// 框里按 Esc 是「这道题我不答了」，人一样在跟前。
+    @Test("框里按 Esc 之后，未读也该清掉")
+    func cancellingInlineTextClearsUnread() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+
+        m.apply(typing, to: id)
+        m.cancelInlineText()
+        #expect(!m.tabs[0].unread)
+        #expect(m.state != .notice)
+    }
+
+    /// **只有「回退」不算答完**：`‹` 是「我不想自己打字了，还是从选项里挑」，
+    /// 题还挂在那儿等他。这条不清未读，不然浮层还在、岛却已经当没事发生了。
+    @Test("点 ‹ 退回选项，不算答完")
+    func steppingBackKeepsUnread() {
+        let m = model()
+        m.debugStartSession(named: "a")
+        let id = m.tabs[0].id
+
+        m.apply(typing, to: id)
+        m.backOutOfTextEntry()
+        #expect(m.tabs[0].unread)
+    }
+
     @Test("给不存在的 tab 报选单不炸")
     func unknownTabIsHarmless() {
         let m = model()
@@ -426,5 +490,40 @@ struct TerminalKeystrokeTests {
     func cursorUpIsNotEscape(applicationMode: Bool) {
         let bytes = Array(TerminalKeystroke.cursorUp(applicationMode: applicationMode).utf8)
         #expect(TerminalKeystroke.isEscape(bytes[...]) == false)
+    }
+
+    // MARK: - ⌘← / ⌘→ 跳行首行尾
+
+    /// 终端没有「行首」这个概念，光标归对面那个程序管。能做的只有翻译成
+    /// 对面认得的键：Claude Code 的输入框走 readline 那套，Ctrl+A / Ctrl+E。
+    @Test("⌘← 发 Ctrl+A，⌘→ 发 Ctrl+E")
+    func commandArrowsJumpToLineEdges() {
+        #expect(TerminalKeystroke.lineJump(keyCode: TerminalKeystroke.KeyCode.leftArrow,
+                                           commandOnly: true) == "\u{01}")
+        #expect(TerminalKeystroke.lineJump(keyCode: TerminalKeystroke.KeyCode.rightArrow,
+                                           commandOnly: true) == "\u{05}")
+    }
+
+    /// **⌘⇧← 必须原样放过去。** macOS 里那是「选到行首」，而 Ink 的输入框
+    /// 根本没有选区 —— 硬翻成 Ctrl+A 会变成「跳过去了但什么都没选中」，
+    /// 比不动更让人误会自己选上了。
+    @Test("带 ⇧ 的不翻译", arguments: [
+        TerminalKeystroke.KeyCode.leftArrow, TerminalKeystroke.KeyCode.rightArrow,
+    ])
+    func shiftedArrowsPassThrough(keyCode: UInt16) {
+        #expect(TerminalKeystroke.lineJump(keyCode: keyCode, commandOnly: false) == nil)
+    }
+
+    /// 光按方向键当然还是方向键 —— 那是 Claude Code 自己在用的（选单上下选）。
+    @Test("没按 ⌘ 的方向键不动它")
+    func bareArrowsPassThrough() {
+        #expect(TerminalKeystroke.lineJump(keyCode: TerminalKeystroke.KeyCode.leftArrow,
+                                           commandOnly: false) == nil)
+    }
+
+    /// ⌘ 配别的键不归这里管（⌘W 是岛收起，⌘C/⌘V 是 SwiftTerm 自己的）。
+    @Test("⌘ 配别的键不动它", arguments: [UInt16(13), UInt16(8), UInt16(126), UInt16(125)])
+    func otherCommandKeysPassThrough(keyCode: UInt16) {
+        #expect(TerminalKeystroke.lineJump(keyCode: keyCode, commandOnly: true) == nil)
     }
 }

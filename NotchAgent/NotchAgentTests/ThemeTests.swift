@@ -54,6 +54,27 @@ struct ThemeTests {
         #expect(contrastRatio(text, on: background) > 7)
     }
 
+    /// 用户 2026-08-01 拿了一张「就要这么大」的截图来对齐：
+    /// 那上面等宽格宽 7.5pt、汉字墨高 11.5pt，岛上 11pt 时是 7.1 / 10.0。
+    /// 别再悄悄退回 11 —— 那正是他说「字体有点小」的那一档。
+    @Test("终端字号不小于 12，而且是等宽的")
+    func terminalFontIsBigEnough() {
+        #expect(IslandTheme.terminalFont.pointSize >= 12)
+        #expect(IslandTheme.terminalFont.isFixedPitch)
+    }
+
+    /// 内容区铺到岛下沿时，两个下角要和岛**同心**。
+    ///
+    /// 卡片左右各内缩 7pt，半径就得跟着小 7pt；用岛自己的 12 会在下面
+    /// 两角各留一牙黑月牙 —— 底色提亮之后那两牙看着就是「终端下面多了一圈边框」。
+    @Test("铺到底时的下角半径 = 岛的半径 − 内缩", arguments: [
+        (12.0, 5.0), (7.0, 0.0), (4.0, 0.0), (20.0, 13.0),
+    ])
+    func bleedingBottomRadius(islandBottom: Double, expected: Double) {
+        let actual = ContentArea.Layout.bleedingBottomRadius(islandBottom: CGFloat(islandBottom))
+        #expect(actual == CGFloat(expected))
+    }
+
     /// WCAG 2.1 的相对亮度与对比度公式。
     private func contrastRatio(_ a: NSColor, on b: NSColor) -> Double {
         let (light, dark) = (max(luminance(a), luminance(b)), min(luminance(a), luminance(b)))

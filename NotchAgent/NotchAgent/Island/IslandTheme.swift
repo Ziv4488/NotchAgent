@@ -43,7 +43,13 @@ enum IslandTheme {
     // 放在这里是为了能被测到（对比度、和 panelFill 的关系），别散回视图里。
     static let terminalForeground = NSColor(white: 0.92, alpha: 1)
     static let terminalCaret = NSColor(red: 0.85, green: 0.47, blue: 0.34, alpha: 1)
-    static let terminalFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    /// 终端字号。**12 不是拍脑袋**：用户给了一张「就要这么大」的截图，
+    /// 量出来的等宽格宽 7.5pt、汉字墨高 11.5pt；岛上原来 11pt 是 7.1 / 10.0。
+    /// 两个比值分别指向 11.6 和 12.6，取中。
+    ///
+    /// 代价是列数：默认 560pt 宽的岛从约 82 列掉到约 75 列。Claude Code 的
+    /// diff 和表格在 60 列以下才散，75 还宽裕；但岛要是被拖到很窄，这里得一起考虑。
+    static let terminalFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 
     /// 输入框跟内容区**同一个表面色**。
     ///

@@ -37,6 +37,24 @@ final class ObservingTerminalView: LocalProcessTerminalView {
         super.send(source: source, data: data)
     }
 
+    /// ⌘← / ⌘→ 翻译成 Ctrl+A / Ctrl+E 再进 PTY（见 `TerminalKeystroke.lineJump`）。
+    ///
+    /// **必须在 `performKeyEquivalent` 里接。** 带 ⌘ 的按键 AppKit 先走一遍
+    /// key equivalent 派发，SwiftTerm 的 `keyDown` 根本看不到它们 ——
+    /// 这就是「在终端里 ⌘← 什么都不发生」的原因。
+    ///
+    /// 发出去走 `send(txt:)`，和用户自己敲是同一个口子，所以照样被
+    /// 上面那个 `send(source:data:)` 抄送到。
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        if let bytes = TerminalKeystroke.lineJump(keyCode: event.keyCode,
+                                                  commandOnly: flags == .command) {
+            send(txt: bytes)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     /// 把 SwiftTerm 自带的滚动条藏掉 —— 用户报的「终端内侧右边有一条透明长条」。
     ///
     /// `MacTerminalView.setup()` 无条件建一个 `NSScroller` 贴在右边、上下拉满，

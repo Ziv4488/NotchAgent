@@ -28,7 +28,7 @@ struct HookEvent: Equatable {
     var kind: Kind
     var sessionID: String
     var cwd: String? = nil
-    /// 该会话的 JSONL 记录路径。上下文占用是从这里读出来的（见 `UsageProbe`）。
+    /// 该会话的 JSONL 记录路径。岛目前不读它 —— 留着是因为 hook 载荷里就有这一项。
     var transcriptPath: String? = nil
     var toolName: String? = nil
     /// `tool_input` 里最能说明「在动什么」的那个值：文件路径、命令、URL。

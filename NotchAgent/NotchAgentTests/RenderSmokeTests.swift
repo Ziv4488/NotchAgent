@@ -56,6 +56,16 @@ struct RenderSmokeTests {
                            onSubmit: { _, _ in }, onCancel: {}))
     }
 
+    /// **`~/.claude/projects` 是空的时候也得画得出「选择其他目录…」。**
+    ///
+    /// 那一行原来在滚动列表里，空列表干脆整支不绘制 —— 而空态文案还写着
+    /// 「用下面的选择其他目录…」，指着一个不存在的按钮。用户报的
+    /// 「开不了一个没有会话的目录，只能 resume」就是这么来的。
+    @Test("一个项目都没有时，新建表单也画得出来")
+    func rendersNewTaskFormWithoutProjects() {
+        render(NewTaskForm(projects: [], onSubmit: { _, _ in }, onCancel: {}))
+    }
+
     /// 会话结束后内容区换成「继续上次会话」，也要画得出来。
     @Test("已结束会话的内容区画得出来")
     func rendersDetachedContent() {

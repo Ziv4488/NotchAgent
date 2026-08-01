@@ -36,6 +36,30 @@ enum TerminalKeystroke {
         applicationMode ? "\u{1b}OA" : "\u{1b}[A"
     }
 
+    /// ⌘← / ⌘→ 要写进 PTY 的字节。返回 `nil` 表示这一下不归我们管，原样放过去。
+    ///
+    /// macOS 的文本框里 ⌘← 是「跳到行首」，用户在岛的终端里自然也这么按。
+    /// 但**终端本身没有「行首」这个概念** —— 光标归对面那个程序管，我们能做的
+    /// 只有把这一下翻译成对面认得的按键。Claude Code 的输入框是 Ink 写的，
+    /// 走 readline 那一套：`Ctrl+A` 行首、`Ctrl+E` 行尾。
+    ///
+    /// **只认「光按着 ⌘」。** ⌘⇧← 在 macOS 里是「选到行首」，而 Ink 的输入框
+    /// 根本没有选区这个东西 —— 没有能翻译过去的键，硬发一个 Ctrl+A 会变成
+    /// 「跳到行首但没选中」，比不动更让人误会。所以带 ⇧ 的原样放行。
+    static func lineJump(keyCode: UInt16, commandOnly: Bool) -> String? {
+        guard commandOnly else { return nil }
+        switch keyCode {
+        case KeyCode.leftArrow: return "\u{01}"    // Ctrl+A
+        case KeyCode.rightArrow: return "\u{05}"   // Ctrl+E
+        default: return nil
+        }
+    }
+
+    enum KeyCode {
+        static let leftArrow: UInt16 = 123
+        static let rightArrow: UInt16 = 124
+    }
+
     /// 这一段字节是不是「用户按了 Esc」。
     ///
     /// 两种编码都要认，因为用哪种由**对面的程序**决定，不由我们：

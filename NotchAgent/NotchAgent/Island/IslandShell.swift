@@ -103,6 +103,17 @@ struct IslandShell: View {
             }
     }
 
+    /// 内容区下沿该有多圆。
+    ///
+    /// 会话活着的时候底下**没有**输入框（键盘直接归终端），内容区就是岛最下面
+    /// 那一层，下沿得贴着岛的下沿、跟着岛的圆角走，不然两个下角各留一牙黑月牙。
+    /// 会话结束、输入框回来之后，它又只是块普通卡片。
+    private var contentBottomRadius: CGFloat {
+        model.selectedTabHasLiveTerminal
+            ? ContentArea.Layout.bleedingBottomRadius(islandBottom: radii.bottom)
+            : ContentArea.Layout.cardRadius
+    }
+
     private var content: some View {
         VStack(spacing: 0) {
             StatusBand(model: model,
@@ -123,7 +134,8 @@ struct IslandShell: View {
                                 onCancel: model.cancelNewTask)
                         .transition(.opacity)
                 } else {
-                    ContentArea(model: model, tab: model.selectedTab)
+                    ContentArea(model: model, tab: model.selectedTab,
+                                bottomRadius: contentBottomRadius)
                         .transition(.opacity)
                     // app tab 的内容区和输入框整体不绘制，真实窗口贴在下面（spec 3.2）。
                     //

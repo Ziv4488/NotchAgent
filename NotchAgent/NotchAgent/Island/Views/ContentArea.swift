@@ -11,6 +11,25 @@ import SwiftUI
 struct ContentArea: View {
     let model: IslandModel
     let tab: IslandTab?
+    /// 这块卡片下沿的圆角。**它不总是一样**：底下还摞着输入框的时候，
+    /// 它就是块普通卡片（`Layout.cardRadius`）；它自己就是岛最底下那一层的时候，
+    /// 下沿要贴到岛的下沿去、跟着岛的圆角走（见 `Layout.bleedingBottomRadius`）。
+    var bottomRadius: CGFloat = Layout.cardRadius
+
+    enum Layout {
+        /// 卡片左右各让出这么多，露出岛体的黑。
+        static let inset: CGFloat = 7
+        static let cardRadius: CGFloat = 10
+
+        /// 卡片铺到岛下沿时，它的下角该有多圆。
+        ///
+        /// 卡片左右各内缩 `inset`，要和岛的下角**同心**，半径就得跟着小 `inset`。
+        /// 用岛自己的 10pt 会在下面两角各留一牙黑色月牙 —— 底色提亮之后
+        /// 那两牙看着就是「终端下面多了一圈边框」，用户报的就是它。
+        static func bleedingBottomRadius(islandBottom: CGFloat) -> CGFloat {
+            max(0, islandBottom - inset)
+        }
+    }
 
     var body: some View {
         Group {
@@ -69,15 +88,20 @@ struct ContentArea: View {
         TerminalPane(session: session)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(IslandTheme.panelFill)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(IslandTheme.panelStroke, lineWidth: 0.5)
-                    }
-            }
-            .padding(.horizontal, 7)
+            .background { card }
+            .padding(.horizontal, Layout.inset)
+    }
+
+    /// 卡片：上面两角固定圆，下面两角看 `bottomRadius`。
+    private var card: some View {
+        let shape = UnevenRoundedRectangle(topLeadingRadius: Layout.cardRadius,
+                                           bottomLeadingRadius: bottomRadius,
+                                           bottomTrailingRadius: bottomRadius,
+                                           topTrailingRadius: Layout.cardRadius,
+                                           style: .continuous)
+        return shape
+            .fill(IslandTheme.panelFill)
+            .overlay { shape.strokeBorder(IslandTheme.panelStroke, lineWidth: 0.5) }
     }
 
     /// 进程已经退出的 tab：会话记录还在 `~/.claude`，可以 `--resume` 接回去。
@@ -123,14 +147,7 @@ struct ContentArea: View {
     private func panel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(IslandTheme.panelFill)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(IslandTheme.panelStroke, lineWidth: 0.5)
-                    }
-            }
-            .padding(.horizontal, 7)
+            .background { card }
+            .padding(.horizontal, Layout.inset)
     }
 }

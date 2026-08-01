@@ -9,18 +9,14 @@
 import SwiftUI
 import Observation
 
-/// 会话的额度、模式与子代理。
+/// 会话的模式与子代理数，都由 hook 喂进来。
 ///
-/// 第 1 阶段是假数据。第 2 阶段由 Claude Code 侧喂进来：额度三项走 `/usage`
-/// 或 statusline，mode 与 subagent 走 hook —— 换数据源时只动填充方，不动这个结构。
+/// 这里原本还有三项额度（上下文 / 5 小时 / 周）。**整块删掉了**：
+/// 终端里 Claude Code 自己那条 statusline 就写着上下文和模式，岛再抄一遍是
+/// 同一份信息占两行，还多一处会对不上的地方；5 小时和周的实时值更是只能拿
+/// 钥匙串里的 OAuth token 去打接口。用户 2026-08-01 拍板不要了。
+/// 连同读法（`UsageProbe` 与它的测试）一起删，不留半截死代码。
 struct SessionUsage: Equatable {
-    /// 上下文窗口已用比例 0...1。**nil = 不知道**，界面画一条横线。
-    /// 用 0 顶替是错的：「没用」和「不知道」是两件事。
-    var contextUsed: Double?
-    /// 5 小时滚动窗口已用比例 0...1。nil = 拿不到或数据已过期。
-    var fiveHourUsed: Double?
-    /// 周额度已用比例 0...1。nil 同上。
-    var weeklyUsed: Double?
     /// 当前权限模式。
     var mode: Mode = .manual
     /// 正在跑的子代理数量。
@@ -473,12 +469,6 @@ final class IslandModel {
         }
     }
 
-    // 用量三项（ctx / 5h / 周）原本在这里刷新：每条 hook 事件读一次 transcript 尾部，
-    // 外加一份 60 秒缓存的 `~/.claude.json`。用量条拆掉后没人看这三个数了，
-    // **把这段一起摘掉是为了停掉那些文件读取** —— `PostToolUse` 很密，
-    // 留着就是每秒钟为了没人看的数字去敲几次磁盘。
-    // 怎么读仍完整留在 `UsageProbe` 里（连同测试），要接回来是一行的事。
-
     // MARK: - 终端里的选择题（spec 3.1）
 
     /// 每个 tab 当前摆着的选择题。收起态靠它在岛下方摆出选项。
@@ -582,6 +572,22 @@ final class IslandModel {
         // **不在这里清 menus。** 清不清由下一次扫描说了算：
         // 万一那一下没被接受（比如选单换了一页），岛该继续显示它，
         // 而不是自作主张地宣布问题解决了。
+        markAnsweredOnIsland(id)
+    }
+
+    /// 用户**在岛上**把这道题答了。
+    ///
+    /// 未读那一条是「有人在等你回话，回头去看一眼」。他刚刚就在跟前、
+    /// 亲手答完了，再留着未读就是催他去看他自己做过的事 ——
+    /// 表现是浮层收掉之后岛停在通知态不肯收起。用户报的就是这个：
+    /// 「输入完后只会进入通知态，没有完全收起，包括选择也是」。
+    ///
+    /// 只清未读，**不碰 status**：这一轮跑没跑完由 hook 说了算，
+    /// 岛不擅自宣布（同 `apply(nil,to:)` 里那段）。
+    private func markAnsweredOnIsland(_ id: SessionID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        tabs[index].unread = false
+        send(.sessionProgress)
     }
 
     /// 输入框回车 / 终端外的追问，写进 PTY。
@@ -613,6 +619,7 @@ final class IslandModel {
         // 不在这里清 menus：清不清由下一次扫描说了算（同 `choose`）。
         // 但键盘现在就该还 —— 他已经答完了。
         onInlineEntryEnded?()
+        markAnsweredOnIsland(id)
     }
 
     /// 从输入框**退回选项列表**。
@@ -637,6 +644,8 @@ final class IslandModel {
         guard let id = selectedTab?.id else { return }
         runtime?.write("\u{1b}", to: id)
         onInlineEntryEnded?()
+        // 取消也是「他答完了」的一种 —— 人就在跟前，别再留一条未读催他。
+        markAnsweredOnIsland(id)
     }
 
     /// 关掉一个 tab：终止进程、移除、必要时回落状态。
@@ -698,8 +707,7 @@ final class IslandModel {
     func debugStartSession(named name: String, directory: String? = nil) {
         let tab = IslandTab(title: name, kind: .cli, status: .running,
                             accent: Color(red: 0.85, green: 0.47, blue: 0.34),
-                            usage: SessionUsage(contextUsed: 0.42, fiveHourUsed: 0.31,
-                                                weeklyUsed: 0.12, mode: .manual, subagents: 2),
+                            usage: SessionUsage(mode: .manual, subagents: 2),
                             directory: directory)
         tabs.append(tab)
         if selectedTabID == nil { selectedTabID = tab.id }

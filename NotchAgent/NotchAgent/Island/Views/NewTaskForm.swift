@@ -26,6 +26,11 @@ struct NewTaskForm: View {
             } else {
                 list
             }
+            // **钉在列表外面。** 它原来是滚动列表里的最后一行，项目一多就滚出了
+            // 视野；空列表时那一支干脆不绘制，而空态文案还写着「用下面的选择其他
+            // 目录…」——指着一个不存在的按钮。用户报的「只能 resume、开不了新目录」
+            // 就是这么来的：`~/.claude/projects` 里没有的目录，界面上找不到入口。
+            chooseOther
             if let error {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -60,7 +65,7 @@ struct NewTaskForm: View {
     }
 
     private var empty: some View {
-        Text("~/.claude/projects 里还没有项目。用下面的「选择其他目录…」挑一个。")
+        Text("~/.claude/projects 里还没有项目。用下面那行挑一个目录。")
             .font(IslandTheme.bodyFont)
             .foregroundStyle(IslandTheme.faint)
             .padding(10)
@@ -73,7 +78,6 @@ struct NewTaskForm: View {
                 ForEach(projects) { project in
                     row(project)
                 }
-                chooseOther
             }
             .padding(4)
         }
@@ -116,23 +120,43 @@ struct NewTaskForm: View {
         .buttonStyle(.plain)
     }
 
+    /// 用「选择其他目录…」挑出来、但不在列表里的那个。挑完了得看得见，
+    /// 否则界面上没有任何地方显示你选了什么，只有指令框的占位符悄悄变了。
+    private var chosenOutsideList: ProjectDirectory? {
+        guard let selected, !projects.contains(selected) else { return nil }
+        return selected
+    }
+
     private var chooseOther: some View {
         Button {
             chooseDirectory()
         } label: {
             HStack(spacing: 7) {
-                Image(systemName: "ellipsis.circle")
+                Image(systemName: chosenOutsideList == nil ? "ellipsis.circle" : "folder.fill")
                     .font(.system(size: 10))
-                Text("选择其他目录…")
+                Text(chosenOutsideList?.name ?? "选择其他目录…")
                     .font(IslandTheme.tabFont)
+                if let chosen = chosenOutsideList {
+                    Text(chosen.displayPath)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(IslandTheme.faint)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(IslandTheme.dim)
+            .foregroundStyle(chosenOutsideList == nil ? IslandTheme.dim : IslandTheme.bright)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(chosenOutsideList == nil ? Color.clear : IslandTheme.tabActiveFill)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .padding(.horizontal, 4)
+        .padding(.bottom, 4)
     }
 
     private var instructionField: some View {
