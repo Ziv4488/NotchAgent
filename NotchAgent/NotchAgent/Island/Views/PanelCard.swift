@@ -10,25 +10,24 @@ import SwiftUI
 /// 内容区 / 新建表单的底板。
 ///
 /// 岛体是纯黑（紧挨着物理刘海，浅一点就露接缝），这张卡片是 #1E1E1E ——
-/// 长时间盯着读的那一块不能是纯黑。两者之间左右各留 `inset` 的黑边，
-/// 是刻意留的，用户点名要保留。
+/// 长时间盯着读的那一块不能是纯黑。**四边都要留出岛体的黑**：
+/// 左右各 `inset`，下面 `bottomInset`。
+///
+/// 中间试过一版让卡片一直铺到岛的下沿（下角跟着岛的圆角走，好消掉那两牙黑月牙）。
+/// 方向是错的 —— 用户的原话是「我对月牙没有意见，我需要看起来是整个岛，
+/// 而不是终端下方跟岛外的内容没有边界」。卡片顶到底之后，岛的下沿就成了终端
+/// 正文的边，桌面直接从字底下开始，读起来是一块贴在屏幕上的终端、不是一座岛。
+/// 留一圈黑边，岛才收得住。
 struct PanelCard: View {
-    /// 下沿的圆角。**它不总是一样**：底下还摞着别的东西时是普通卡片；
-    /// 自己就是岛最底下那一层时要贴到岛的下沿去（见 `bleedingBottomRadius`）。
-    var bottomRadius: CGFloat = PanelCard.cardRadius
-
     /// 卡片左右各让出这么多，露出岛体的黑。
     static let inset: CGFloat = 7
-    static let cardRadius: CGFloat = 10
 
-    /// 卡片铺到岛下沿时，它的下角该有多圆。
-    ///
-    /// 卡片左右各内缩 `inset`，要和岛的下角**同心**，半径就得跟着小 `inset`。
-    /// 用卡片自己那 10pt 会在下面两角各留一牙黑月牙 —— 底色提亮之后
-    /// 那两牙看着就是「终端下面多了一圈边框」，用户报过两次。
-    static func bleedingBottomRadius(islandBottom: CGFloat) -> CGFloat {
-        max(0, islandBottom - inset)
-    }
+    /// 卡片是岛最底下那一层时，下面留出这么多黑边。
+    /// 数值跟 `InputBar` 的 `.padding(.bottom, 8)` 对齐 —— 会话活着时下面没有输入框，
+    /// 两种情况下岛的下边框应当一样宽。
+    static let bottomInset: CGFloat = 8
+
+    static let cardRadius: CGFloat = 10
 
     var body: some View {
         shape
@@ -36,11 +35,7 @@ struct PanelCard: View {
             .overlay { shape.strokeBorder(IslandTheme.panelStroke, lineWidth: 0.5) }
     }
 
-    private var shape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(topLeadingRadius: Self.cardRadius,
-                               bottomLeadingRadius: bottomRadius,
-                               bottomTrailingRadius: bottomRadius,
-                               topTrailingRadius: Self.cardRadius,
-                               style: .continuous)
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous)
     }
 }

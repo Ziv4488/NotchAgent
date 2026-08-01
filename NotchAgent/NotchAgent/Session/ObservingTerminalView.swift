@@ -22,6 +22,10 @@ final class ObservingTerminalView: LocalProcessTerminalView {
     /// 每一段发往子进程的字节。在主线程上调用（键盘事件本来就在主线程）。
     var onSend: ((ArraySlice<UInt8>) -> Void)?
 
+    /// ⌘C 往哪儿写。生产代码就是系统剪贴板，单测换成一块私有的，
+    /// 免得跑一遍测试就把用户手上的剪贴板洗了。
+    var pasteboard: NSPasteboard = .general
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         hideScroller()
@@ -76,11 +80,42 @@ final class ObservingTerminalView: LocalProcessTerminalView {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         guard flags == .command else { return false }
         switch event.charactersIgnoringModifiers {
-        case "c": copy(self); return true
+        case "c": copySelection(); return true
         case "v": paste(self); return true
         case "a": selectAll(self); return true
         default: return false
         }
+    }
+
+    /// ⌘C。**不能直接用 SwiftTerm 的 `copy(_:)`。**
+    ///
+    /// 它是这么写的：
+    /// ```swift
+    /// let str = selection.getSelectedText()   // 没看 selection.active
+    /// clipboard.clearContents()
+    /// clipboard.setString(str, forType: .string)
+    /// ```
+    /// 选区**失活之后 start/end 并不清零**（`selectNone` 只把 active 置 false），
+    /// 于是「上一次选过什么」会一直留着。实测这么一串（探针 `/tmp/notch-probe.log`）：
+    ///
+    /// | 做了什么 | selectionActive | ⌘C 拿到 |
+    /// |---|---|---|
+    /// | 什么都没选 | false | **把剪贴板清空了** |
+    /// | 鼠标拖一段 | true | 那 11 个字 ✓ |
+    /// | 再单击一下 | false | 还是那 11 个字（旧的） |
+    /// | ⌘A | true | 整屏 502 字 |
+    /// | 再单击一下 | false | **还是那 502 字** ← 用户报的 |
+    ///
+    /// 用户先按过 ⌘A（或者拖出去过一次选区），之后不管选没选中，⌘C 一律
+    /// 复制整个对话，⌘V 再把它整段贴回输入框 —— 出问题的是复制，不是粘贴。
+    ///
+    /// 这里改成看 `getSelection()`：它是 SwiftTerm 里**唯一**会检查
+    /// `selection.active` 的取值口。没有活着的选区就一个字都不动 ——
+    /// 真终端里 ⌘C 也是这样，不会顺手把你剪贴板清了。
+    private func copySelection() {
+        guard let text = getSelection(), !text.isEmpty else { return }
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 
     /// 把 SwiftTerm 自带的滚动条藏掉 —— 用户报的「终端内侧右边有一条透明长条」。

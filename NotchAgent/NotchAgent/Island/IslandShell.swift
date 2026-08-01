@@ -103,15 +103,13 @@ struct IslandShell: View {
             }
     }
 
-    /// 内容区下沿该有多圆。
+    /// 内容区下面要不要自己留黑边。
     ///
     /// 会话活着的时候底下**没有**输入框（键盘直接归终端），内容区就是岛最下面
-    /// 那一层，下沿得贴着岛的下沿、跟着岛的圆角走，不然两个下角各留一牙黑月牙。
-    /// 会话结束、输入框回来之后，它又只是块普通卡片。
-    private var contentBottomRadius: CGFloat {
-        model.selectedTabHasLiveTerminal
-            ? PanelCard.bleedingBottomRadius(islandBottom: radii.bottom)
-            : PanelCard.cardRadius
+    /// 那一层 —— 不留的话卡片直接顶到岛的下沿，岛就没有下边框了。
+    /// 会话结束、输入框回来之后，那圈黑边归输入框留。
+    private var contentBottomInset: CGFloat {
+        model.selectedTabHasLiveTerminal ? PanelCard.bottomInset : 0
     }
 
     private var content: some View {
@@ -130,13 +128,13 @@ struct IslandShell: View {
                 if model.showsNewTaskForm {
                     NewTaskForm(projects: model.projects,
                                 error: model.launchError,
-                                bottomRadius: PanelCard.bleedingBottomRadius(islandBottom: radii.bottom),
+                                bottomInset: PanelCard.bottomInset,
                                 onSubmit: { model.startTask(in: $0, instruction: $1) },
                                 onCancel: model.cancelNewTask)
                         .transition(.opacity)
                 } else {
                     ContentArea(model: model, tab: model.selectedTab,
-                                bottomRadius: contentBottomRadius)
+                                bottomInset: contentBottomInset)
                         .transition(.opacity)
                     // app tab 的内容区和输入框整体不绘制，真实窗口贴在下面（spec 3.2）。
                     //

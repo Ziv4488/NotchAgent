@@ -11,8 +11,9 @@ import SwiftUI
 struct ContentArea: View {
     let model: IslandModel
     let tab: IslandTab?
-    /// 这块卡片下沿的圆角，见 `PanelCard`。
-    var bottomRadius: CGFloat = PanelCard.cardRadius
+    /// 这块卡片下面留多宽的黑边。会话活着时它就是岛最底下那一层，要留；
+    /// 下面还摞着输入框时由输入框自己留。见 `PanelCard.bottomInset`。
+    var bottomInset: CGFloat = 0
 
     var body: some View {
         Group {
@@ -71,8 +72,9 @@ struct ContentArea: View {
         TerminalPane(session: session)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background { PanelCard(bottomRadius: bottomRadius) }
+            .background { PanelCard() }
             .padding(.horizontal, PanelCard.inset)
+            .padding(.bottom, bottomInset)
     }
 
     /// 进程已经退出的 tab：会话记录还在 `~/.claude`，可以 `--resume` 接回去。
@@ -118,7 +120,8 @@ struct ContentArea: View {
     private func panel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background { PanelCard(bottomRadius: bottomRadius) }
+            .background { PanelCard() }
             .padding(.horizontal, PanelCard.inset)
+            .padding(.bottom, bottomInset)
     }
 }

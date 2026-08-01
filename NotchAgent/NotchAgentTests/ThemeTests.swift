@@ -63,16 +63,18 @@ struct ThemeTests {
         #expect(IslandTheme.terminalFont.isFixedPitch)
     }
 
-    /// 内容区铺到岛下沿时，两个下角要和岛**同心**。
+    /// **卡片四边都得留出岛体的黑。**
     ///
-    /// 卡片左右各内缩 7pt，半径就得跟着小 7pt；用岛自己的 12 会在下面
-    /// 两角各留一牙黑月牙 —— 底色提亮之后那两牙看着就是「终端下面多了一圈边框」。
-    @Test("铺到底时的下角半径 = 岛的半径 − 内缩", arguments: [
-        (12.0, 5.0), (7.0, 0.0), (4.0, 0.0), (20.0, 13.0),
-    ])
-    func bleedingBottomRadius(islandBottom: Double, expected: Double) {
-        let actual = PanelCard.bleedingBottomRadius(islandBottom: CGFloat(islandBottom))
-        #expect(actual == CGFloat(expected))
+    /// 有过一版让卡片铺到岛的下沿（下角跟着岛的圆角走）。用户看完的原话是
+    /// 「我对月牙没有意见，我需要看起来是整个岛，而不是终端下方跟岛外的内容
+    /// 没有边界」—— 顶到底之后岛的下沿就成了正文的边，桌面从字底下开始。
+    /// 别再把这两个数改成 0。
+    @Test("卡片四边都留黑边，下面那圈和输入框一样宽")
+    func cardKeepsAMargin() {
+        #expect(PanelCard.inset > 0)
+        #expect(PanelCard.bottomInset > 0)
+        // InputBar 的 `.padding(.bottom, 8)`：有没有输入框，下边框都得一样宽。
+        #expect(PanelCard.bottomInset == 8)
     }
 
     /// WCAG 2.1 的相对亮度与对比度公式。
