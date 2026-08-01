@@ -27,7 +27,17 @@ struct PanelCard: View {
     /// 两种情况下岛的下边框应当一样宽。
     static let bottomInset: CGFloat = 8
 
-    static let cardRadius: CGFloat = 10
+    /// 卡片的圆角。**跟着岛的下角走，不是随便挑的一个数。**
+    ///
+    /// 卡片四边各内缩，要和岛的下角**同心**（两条弧线处处平行、黑边一圈一样宽），
+    /// 半径就得比岛小一个内缩量：12 − 7 = **5**。
+    ///
+    /// 用户 2026-08-02 报的「岛的圆角需与终端的圆角保持一致」就是这个 ——
+    /// 原来卡片写死 10pt，比同心该有的圆得多，于是转角处的黑边比直边宽出一截，
+    /// 两条弧看着就不是一套的。写成算出来的，岛的圆角以后改了它也跟着走。
+    static var cardRadius: CGFloat {
+        max(2, IslandConstants.default.bottomCornerRadius - inset)
+    }
 
     var body: some View {
         shape

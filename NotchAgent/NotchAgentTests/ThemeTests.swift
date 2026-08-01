@@ -77,6 +77,19 @@ struct ThemeTests {
         #expect(PanelCard.bottomInset == 8)
     }
 
+    /// **卡片的圆角要和岛的下角同心。**
+    ///
+    /// 同心 = 半径差正好等于内缩量，两条弧线处处平行、黑边一圈一样宽。
+    /// 卡片原来写死 10pt，比同心该有的圆得多，转角处的黑边比直边宽出一截 ——
+    /// 用户 2026-08-02 报的「岛的圆角需与终端的圆角保持一致」就是这个。
+    /// 别再改成一个写死的数。
+    @Test("卡片圆角 = 岛的下角 − 内缩")
+    func cardIsConcentricWithTheIsland() {
+        let island = IslandConstants.default.bottomCornerRadius
+        #expect(PanelCard.cardRadius == island - PanelCard.inset)
+        #expect(PanelCard.cardRadius == 5)
+    }
+
     /// WCAG 2.1 的相对亮度与对比度公式。
     private func contrastRatio(_ a: NSColor, on b: NSColor) -> Double {
         let (light, dark) = (max(luminance(a), luminance(b)), min(luminance(a), luminance(b)))

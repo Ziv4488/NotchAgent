@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.controller = controller
 
         installStatusItem()
+        model.confirmCloseLiveTab = Self.confirmCloseLiveTab
 
         // 手动测试用：--args -debugState running|notice|expanded|newtask 直接开在某个形态。
         // 这条路走假数据，**不接 runtime** —— 否则一开 app 就会去起真的 claude。
@@ -83,6 +84,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let response = NotchWindow.steppingAside { alert.runModal() }
         return response == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+    }
+
+    /// 关一个还在跑的 tab 之前先问一声（用户 2026-08-02 要的）。
+    ///
+    /// 和退出确认是同一件事的两个尺度：那一下点下去，一个正在干活的会话就没了，
+    /// 跑到一半的那一轮丢掉。退 app 早就有确认框，关 tab 一直没有。
+    ///
+    /// **弹框同样要让岛先下去**，理由见 `applicationShouldTerminate`
+    /// —— 岛压在 `statusBar + 1`，展开态的画布能把整个 `NSAlert` 盖住。
+    private static func confirmCloseLiveTab(_ tab: IslandTab) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "「\(tab.title)」还在跑"
+        alert.informativeText = "关掉这个 tab 会终止它的 Claude Code 会话。"
+            + "会话记录留在 ~/.claude，之后还能用「继续上次会话」接回去。"
+        alert.addButton(withTitle: "关掉并终止")
+        alert.addButton(withTitle: "取消")
+        alert.alertStyle = .warning
+        NSApp.activate(ignoringOtherApps: true)
+        return NotchWindow.steppingAside { alert.runModal() } == .alertFirstButtonReturn
     }
 
     func applicationWillTerminate(_ notification: Notification) {

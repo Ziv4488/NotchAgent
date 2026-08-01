@@ -648,8 +648,28 @@ final class IslandModel {
         markAnsweredOnIsland(id)
     }
 
+    /// 这个 tab 背后有没有一个活着的会话进程。
+    func hasLiveSession(_ id: UUID) -> Bool {
+        runtime?.session(id)?.status.isAlive ?? false
+    }
+
+    /// 关一个**还活着**的 tab 之前先问一声。返回 false 就不关。
+    ///
+    /// 由 app 层接上真正的弹框（岛没有主窗口，弹框还得让岛先下去，
+    /// 见 `NotchWindow.steppingAside`）。没接的时候 —— 预览、单测 —— 当作确认。
+    var confirmCloseLiveTab: ((IslandTab) -> Bool)?
+
     /// 关掉一个 tab：终止进程、移除、必要时回落状态。
+    ///
+    /// **进程还在跑就得先问。** 关 tab 和退整个 app 是同一件事的两个尺度：
+    /// 那一下点下去，一个正在干活的 Claude Code 会话就没了，跑到一半的那一轮丢掉。
+    /// 退 app 早就有确认框，关 tab 没有，是漏的。
+    /// 已经结束的 tab（`--resume` 接得回去的那种）不问，那一下没有代价。
     func closeTab(_ id: UUID) {
+        if hasLiveSession(id), let tab = tabs.first(where: { $0.id == id }),
+           confirmCloseLiveTab?(tab) == false {
+            return
+        }
         runtime?.close(id)
         tabs.removeAll { $0.id == id }
         if selectedTabID == id { selectedTabID = tabs.first?.id }
@@ -679,19 +699,22 @@ final class IslandModel {
 
     // MARK: - 持久化（spec 7）
 
+    /// tab 骨架存在哪。单测指到临时文件上去，别写用户真的那份。
+    var tabStoreURL: URL = TabStore.fileURL
+
     /// 只存骨架。会话内容归 `~/.claude`，岛不复制一份。
     func persistTabs() {
         guard runtime != nil else { return }
         TabStore.save(tabs.filter { $0.kind == .cli }.map {
             TabSnapshot(id: $0.id, title: $0.title, directory: $0.directory,
                         claudeSessionID: runtime?.session($0.id)?.claudeSessionID)
-        })
+        }, to: tabStoreURL)
     }
 
     /// 重启后把 tab 摆回来，但**不自动重开进程** ——
     /// 开机就悄悄拉起五个 `claude` 是用户没要求过的事。显示成「已结束 · 可继续」。
     private func restoreTabs() {
-        let snapshots = TabStore.load()
+        let snapshots = TabStore.load(from: tabStoreURL)
         guard !snapshots.isEmpty, tabs.isEmpty else { return }
         tabs = snapshots.map {
             IslandTab(id: $0.id, title: $0.title, kind: .cli, status: .ended,

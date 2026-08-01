@@ -33,6 +33,9 @@ final class CLISession: NSObject, AgentSession, LocalProcessTerminalViewDelegate
     let terminalView: ObservingTerminalView
     let callbacks = SessionCallbacks()
 
+    /// 关掉会话之后，把跑到岛外面去的那一个也收掉。见 `SessionReaper`。
+    var reaper = SessionReaper()
+
     private let launch: Launch
     private let log = Logger(subsystem: "com.notchagent", category: "cli-session")
 
@@ -114,6 +117,13 @@ final class CLISession: NSObject, AgentSession, LocalProcessTerminalViewDelegate
     func terminate() {
         guard status.isAlive else { return }
         terminalView.terminate()
+        // **子进程杀掉不等于会话没了。** Claude Code 会把会话交给它自己的守护进程，
+        // 交出去之后那个进程的父进程是 daemon 不是岛，`terminalView.terminate()`
+        // 发的 SIGTERM 打在一个已经不相干的 pid 上。按 Claude 自己的 session id
+        // 再扫一遍 —— 那是个 UUID，只可能是这一个会话（见 `SessionReaper`）。
+        if let claudeSessionID {
+            reaper.reap(signature: "--session-id \(claudeSessionID)")
+        }
         // 128 + SIGTERM，和用户在终端里 kill 一个进程后看到的 $? 一致。
         status = .finished(128 + SIGTERM)
     }

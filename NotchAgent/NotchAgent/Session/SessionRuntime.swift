@@ -62,12 +62,27 @@ final class SessionRuntime {
         startWatchingMenus()
     }
 
+    /// 关整个 app。**退出确认框上写的那句话必须是真的。**
+    ///
+    /// `store.terminateAll()` 只管得着岛自己的子进程。Claude Code 2.1 会把会话
+    /// 交给它自己的守护进程，交出去的那些得按命令行特征再扫一遍：岛起的 claude
+    /// 都带着**岛自己那份** settings 文件的绝对路径，用户在终端里自己跑的不会带。
+    /// 顺带也收掉以前那些残留下来的（见 `SessionReaper` 里记的那两个）。
     func shutdown() {
         menuTimer?.invalidate()
         menuTimer = nil
         store.terminateAll()
+        reaper.reap(signature: Self.launchSignature(settingsURL: bridge.settingsURL))
         bridge.stop()
     }
+
+    /// 岛起的 claude 在命令行里长什么样。抽出来是为了能单测。
+    nonisolated static func launchSignature(settingsURL: URL) -> String {
+        "--settings \(settingsURL.path)"
+    }
+
+    /// 收尾用。单测替换成假的，免得真去 pgrep。
+    var reaper = SessionReaper()
 
     // MARK: - 起会话
 

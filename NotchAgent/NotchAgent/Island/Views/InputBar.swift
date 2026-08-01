@@ -31,11 +31,13 @@ struct InputBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
+        // 圆角跟内容区那张卡同一个（`PanelCard.cardRadius`）：会话结束之后
+        // 这一条就是岛最底下那一层，它的下角要和岛的下角同心。
         .background {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: PanelCard.cardRadius, style: .continuous)
                 .fill(IslandTheme.inputFill)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: PanelCard.cardRadius, style: .continuous)
                         .strokeBorder(IslandTheme.inputStroke, lineWidth: 0.5)
                 }
         }
