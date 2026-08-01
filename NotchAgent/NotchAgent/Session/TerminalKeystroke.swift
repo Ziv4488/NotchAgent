@@ -33,24 +33,76 @@ enum TerminalKeystroke {
     /// 注意这**不是** Esc：`isEscape` 只认单独一个 `0x1b`，所以这一下不会被
     /// 当成「用户掐了这一轮」（见 `TerminalKeystrokeTests`）。
     static func cursorUp(applicationMode: Bool) -> String {
-        applicationMode ? "\u{1b}OA" : "\u{1b}[A"
+        cursor(.up, applicationMode: applicationMode)
     }
 
-    /// ⌘← / ⌘→ 要写进 PTY 的字节。返回 `nil` 表示这一下不归我们管，原样放过去。
+    enum Direction: String {
+        case up = "A", down = "B", right = "C", left = "D"
+    }
+
+    static func cursor(_ direction: Direction, applicationMode: Bool) -> String {
+        (applicationMode ? "\u{1b}O" : "\u{1b}[") + direction.rawValue
+    }
+
+    /// 按下去的那一刻还按着哪些修饰键。
+    struct Modifiers: Equatable {
+        var command = false
+        var shift = false
+        var option = false
+        var control = false
+    }
+
+    /// 岛替终端翻译的那几下按键。返回 `nil` = 不归我们管，原样放过去。
     ///
-    /// macOS 的文本框里 ⌘← 是「跳到行首」，用户在岛的终端里自然也这么按。
-    /// 但**终端本身没有「行首」这个概念** —— 光标归对面那个程序管，我们能做的
-    /// 只有把这一下翻译成对面认得的按键。Claude Code 的输入框是 Ink 写的，
-    /// 走 readline 那一套：`Ctrl+A` 行首、`Ctrl+E` 行尾。
+    /// **终端本身没有「行首」「整行」这些概念** —— 光标和那行字都归对面那个程序管，
+    /// 我们能做的只有把 macOS 的手势翻译成对面认得的按键。Claude Code 的输入框是
+    /// Ink 写的，走 readline 那一套：
     ///
-    /// **只认「光按着 ⌘」。** ⌘⇧← 在 macOS 里是「选到行首」，而 Ink 的输入框
-    /// 根本没有选区这个东西 —— 没有能翻译过去的键，硬发一个 Ctrl+A 会变成
-    /// 「跳到行首但没选中」，比不动更让人误会。所以带 ⇧ 的原样放行。
-    static func lineJump(keyCode: UInt16, commandOnly: Bool) -> String? {
-        guard commandOnly else { return nil }
+    /// | 按下 | 发出去 | |
+    /// |---|---|---|
+    /// | ⌘← | `Ctrl+A` | 跳行首 |
+    /// | ⌘→ | `Ctrl+E` | 跳行尾 |
+    /// | ⌘⌫ | `Ctrl+U` | 整行删掉 |
+    /// | ⌘⇧← / ⌘⇧→ | 同 ⌘←/⌘→ | 见下 |
+    /// | ⇧← / ⇧→ | 普通方向键 | 见下 |
+    /// | ⌥⌫ | `Ctrl+W` | 删掉前一个词 |
+    ///
+    /// **⇧ 一律被吃掉，退化成不带 ⇧ 的那一下。** 在 macOS 里 ⇧ 配方向键是「选中」，
+    /// 而 Ink 的输入框根本没有选区这个东西。而且实测下来更糟：⇧← 按下去
+    /// **一个字节都不会进 PTY** —— SwiftTerm 整个把它吞了（探针在
+    /// `send(source:data:)` 上抓过，普通 ← 有 `1b 5b 44`，⇧← 什么都没有）。
+    /// 于是「按着 ⇧ 连光标都动不了」，用户报的就是这个。
+    /// 选中做不到就算了，但不能连移动也一起废掉。
+    ///
+    /// ⌃ 开头的一概不碰 —— 那些本来就是 Claude Code 直接在用的。
+    static func shortcut(keyCode: UInt16, modifiers: Modifiers,
+                         applicationCursor: Bool) -> String? {
+        guard !modifiers.control else { return nil }
+
+        if modifiers.option {
+            // **⌥⌫ 必须翻。** SwiftTerm 把它发成 `ESC` 和 `0x08` **两段**写进 PTY，
+            // 而 Ink 把一段 stdin 当成一次按键 —— Claude Code 先收到一个孤零零的
+            // Esc（在它那儿是「掐掉这一轮」），再收到一个退格。岛这边的 Esc 识别
+            // 也会跟着把这个 tab 判成「用户取消了」。翻成 `Ctrl+W`
+            // （readline 的 backward-kill-word），一段字节，语义正好是删前一个词。
+            //
+            // ⌥← / ⌥→ 不用管：SwiftTerm 自己就发对了（实测按词移动正常）。
+            return keyCode == KeyCode.delete && !modifiers.command ? "\u{17}" : nil
+        }
+
+        if modifiers.command {
+            switch keyCode {
+            case KeyCode.leftArrow: return "\u{01}"    // Ctrl+A
+            case KeyCode.rightArrow: return "\u{05}"   // Ctrl+E
+            case KeyCode.delete: return "\u{15}"       // Ctrl+U
+            default: return nil
+            }
+        }
+
+        guard modifiers.shift else { return nil }
         switch keyCode {
-        case KeyCode.leftArrow: return "\u{01}"    // Ctrl+A
-        case KeyCode.rightArrow: return "\u{05}"   // Ctrl+E
+        case KeyCode.leftArrow: return cursor(.left, applicationMode: applicationCursor)
+        case KeyCode.rightArrow: return cursor(.right, applicationMode: applicationCursor)
         default: return nil
         }
     }
@@ -58,6 +110,7 @@ enum TerminalKeystroke {
     enum KeyCode {
         static let leftArrow: UInt16 = 123
         static let rightArrow: UInt16 = 124
+        static let delete: UInt16 = 51
     }
 
     /// 这一段字节是不是「用户按了 Esc」。

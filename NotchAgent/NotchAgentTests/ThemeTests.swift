@@ -71,7 +71,7 @@ struct ThemeTests {
         (12.0, 5.0), (7.0, 0.0), (4.0, 0.0), (20.0, 13.0),
     ])
     func bleedingBottomRadius(islandBottom: Double, expected: Double) {
-        let actual = ContentArea.Layout.bleedingBottomRadius(islandBottom: CGFloat(islandBottom))
+        let actual = PanelCard.bleedingBottomRadius(islandBottom: CGFloat(islandBottom))
         #expect(actual == CGFloat(expected))
     }
 

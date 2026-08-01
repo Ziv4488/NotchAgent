@@ -121,6 +121,11 @@ final class NotchWindow: NSPanel {
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown { claimKeyboard() }
+        // 终端要岛替它接管的那几下：⌘←、⇧←、⌥⌫、⌘C/⌘V/⌘A
+        // （为什么必须在这儿拦，见 `ObservingTerminalView.handle`）。
+        if event.type == .keyDown,
+           let terminal = firstResponder as? ObservingTerminalView,
+           terminal.handle(event) { return }
         super.sendEvent(event)
         // 候选框是打字过程中才出现的，每次按键后都补一次。
         if event.type == .keyDown { raiseInputMethodWindows() }

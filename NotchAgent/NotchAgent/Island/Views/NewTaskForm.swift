@@ -12,6 +12,9 @@ struct NewTaskForm: View {
     let projects: [ProjectDirectory]
     /// 上一次起会话失败的原因（找不到 `claude` 之类）。表单原地留着，把话说清楚。
     var error: String?
+    /// 新建流程里这张表单**就是岛最底下那一层**，下沿要贴着岛的下沿走。
+    /// 不给的话（预览、单测）按普通卡片画。见 `PanelCard`。
+    var bottomRadius: CGFloat = PanelCard.cardRadius
     var onSubmit: (ProjectDirectory, String) -> Void
     var onCancel: () -> Void
 
@@ -46,15 +49,8 @@ struct NewTaskForm: View {
             Divider().overlay(IslandTheme.panelStroke)
             instructionField
         }
-        .background {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(IslandTheme.panelFill)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(IslandTheme.panelStroke, lineWidth: 0.5)
-                }
-        }
-        .padding(.horizontal, 7)
+        .background { PanelCard(bottomRadius: bottomRadius) }
+        .padding(.horizontal, PanelCard.inset)
         .onAppear {
             selected = projects.first
             // 抢两次：NSApp.activate() 是异步的，onAppear 时窗口可能还没成为 key，

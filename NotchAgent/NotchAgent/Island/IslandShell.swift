@@ -110,8 +110,8 @@ struct IslandShell: View {
     /// 会话结束、输入框回来之后，它又只是块普通卡片。
     private var contentBottomRadius: CGFloat {
         model.selectedTabHasLiveTerminal
-            ? ContentArea.Layout.bleedingBottomRadius(islandBottom: radii.bottom)
-            : ContentArea.Layout.cardRadius
+            ? PanelCard.bleedingBottomRadius(islandBottom: radii.bottom)
+            : PanelCard.cardRadius
     }
 
     private var content: some View {
@@ -130,6 +130,7 @@ struct IslandShell: View {
                 if model.showsNewTaskForm {
                     NewTaskForm(projects: model.projects,
                                 error: model.launchError,
+                                bottomRadius: PanelCard.bleedingBottomRadius(islandBottom: radii.bottom),
                                 onSubmit: { model.startTask(in: $0, instruction: $1) },
                                 onCancel: model.cancelNewTask)
                         .transition(.opacity)

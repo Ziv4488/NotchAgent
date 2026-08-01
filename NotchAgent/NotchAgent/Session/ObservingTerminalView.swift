@@ -37,22 +37,50 @@ final class ObservingTerminalView: LocalProcessTerminalView {
         super.send(source: source, data: data)
     }
 
-    /// ⌘← / ⌘→ 翻译成 Ctrl+A / Ctrl+E 再进 PTY（见 `TerminalKeystroke.lineJump`）。
+    /// 这一下按键岛替终端接管了吗？接管了就别再往下传。
     ///
-    /// **必须在 `performKeyEquivalent` 里接。** 带 ⌘ 的按键 AppKit 先走一遍
-    /// key equivalent 派发，SwiftTerm 的 `keyDown` 根本看不到它们 ——
-    /// 这就是「在终端里 ⌘← 什么都不发生」的原因。
+    /// **由 `NotchWindow.sendEvent` 在最前面调，这是唯一的入口。**
+    /// 不能指望 `performKeyEquivalent` —— 那一轮只跑带 ⌘ 的键，⇧← 走的是普通
+    /// keyDown；也不能重写 `keyDown` —— 它在 SwiftTerm 里是 `public` 不是 `open`，
+    /// 子类根本接不到。窗口的 `sendEvent` 是键盘事件进视图之前最后一个我们说了算的点。
+    func handle(_ event: NSEvent) -> Bool {
+        translate(event) || editingAction(event)
+    }
+
+    /// 把这一下翻译成字节写进 PTY（见 `TerminalKeystroke.shortcut`）。
     ///
-    /// 发出去走 `send(txt:)`，和用户自己敲是同一个口子，所以照样被
-    /// 上面那个 `send(source:data:)` 抄送到。
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    /// 发出去走 `send(txt:)`，和用户自己敲是同一个口子，所以照样被上面那个
+    /// `send(source:data:)` 抄送到（Esc 的识别依赖这条）。
+    private func translate(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags
+        let modifiers = TerminalKeystroke.Modifiers(command: flags.contains(.command),
+                                                    shift: flags.contains(.shift),
+                                                    option: flags.contains(.option),
+                                                    control: flags.contains(.control))
+        guard let bytes = TerminalKeystroke.shortcut(
+            keyCode: event.keyCode, modifiers: modifiers,
+            applicationCursor: getTerminal().applicationCursor) else { return false }
+        send(txt: bytes)
+        return true
+    }
+
+    /// ⌘C / ⌘V / ⌘A。
+    ///
+    /// **这三个在岛里本来是死的。** SwiftTerm 把它们实现成了 `copy(_:)` /
+    /// `paste(_:)` / `selectAll(_:)` 这种**动作方法** —— 正常 app 里由「编辑」菜单
+    /// 的 key equivalent 沿响应链调过去。而岛是 `LSUIElement`，压根没有主菜单
+    /// （只有状态栏那个 `NSStatusItem.menu`，它不参与按键派发），于是这三下
+    /// 一路无人认领。这里直接调，等价于菜单本该做的事。
+    /// （实测：不接管的话，在岛的终端里 ⌘V 什么都不会发生。）
+    private func editingAction(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if let bytes = TerminalKeystroke.lineJump(keyCode: event.keyCode,
-                                                  commandOnly: flags == .command) {
-            send(txt: bytes)
-            return true
+        guard flags == .command else { return false }
+        switch event.charactersIgnoringModifiers {
+        case "c": copy(self); return true
+        case "v": paste(self); return true
+        case "a": selectAll(self); return true
+        default: return false
         }
-        return super.performKeyEquivalent(with: event)
     }
 
     /// 把 SwiftTerm 自带的滚动条藏掉 —— 用户报的「终端内侧右边有一条透明长条」。

@@ -494,36 +494,85 @@ struct TerminalKeystrokeTests {
 
     // MARK: - ⌘← / ⌘→ 跳行首行尾
 
-    /// 终端没有「行首」这个概念，光标归对面那个程序管。能做的只有翻译成
-    /// 对面认得的键：Claude Code 的输入框走 readline 那套，Ctrl+A / Ctrl+E。
-    @Test("⌘← 发 Ctrl+A，⌘→ 发 Ctrl+E")
-    func commandArrowsJumpToLineEdges() {
-        #expect(TerminalKeystroke.lineJump(keyCode: TerminalKeystroke.KeyCode.leftArrow,
-                                           commandOnly: true) == "\u{01}")
-        #expect(TerminalKeystroke.lineJump(keyCode: TerminalKeystroke.KeyCode.rightArrow,
-                                           commandOnly: true) == "\u{05}")
+    private typealias Key = TerminalKeystroke.KeyCode
+    private func mods(command: Bool = false, shift: Bool = false,
+                      option: Bool = false, control: Bool = false) -> TerminalKeystroke.Modifiers {
+        .init(command: command, shift: shift, option: option, control: control)
+    }
+    private func sent(_ keyCode: UInt16, _ modifiers: TerminalKeystroke.Modifiers,
+                      applicationCursor: Bool = false) -> String? {
+        TerminalKeystroke.shortcut(keyCode: keyCode, modifiers: modifiers,
+                                   applicationCursor: applicationCursor)
     }
 
-    /// **⌘⇧← 必须原样放过去。** macOS 里那是「选到行首」，而 Ink 的输入框
-    /// 根本没有选区 —— 硬翻成 Ctrl+A 会变成「跳过去了但什么都没选中」，
-    /// 比不动更让人误会自己选上了。
-    @Test("带 ⇧ 的不翻译", arguments: [
-        TerminalKeystroke.KeyCode.leftArrow, TerminalKeystroke.KeyCode.rightArrow,
-    ])
-    func shiftedArrowsPassThrough(keyCode: UInt16) {
-        #expect(TerminalKeystroke.lineJump(keyCode: keyCode, commandOnly: false) == nil)
+    /// 终端没有「行首」「整行」这些概念，光标和那行字都归对面那个程序管。
+    /// 能做的只有翻译成对面认得的键：Claude Code 的输入框走 readline 那套。
+    @Test("⌘← / ⌘→ / ⌘⌫ 翻成 Ctrl+A / Ctrl+E / Ctrl+U")
+    func commandKeysTranslate() {
+        #expect(sent(Key.leftArrow, mods(command: true)) == "\u{01}")
+        #expect(sent(Key.rightArrow, mods(command: true)) == "\u{05}")
+        #expect(sent(Key.delete, mods(command: true)) == "\u{15}")
+    }
+
+    /// **⇧ 一律被吃掉，退化成不带 ⇧ 的那一下。** macOS 里 ⇧ 配方向键是「选中」，
+    /// Ink 的输入框没有选区；更要命的是实测 ⇧← **一个字节都进不了 PTY**
+    /// （SwiftTerm 整个吞掉），于是按着 ⇧ 连光标都动不了 —— 用户报的就是这个。
+    @Test("⇧← / ⇧→ 退化成普通方向键", arguments: [false, true])
+    func shiftedArrowsFallBackToPlainMovement(applicationCursor: Bool) {
+        let left = sent(Key.leftArrow, mods(shift: true), applicationCursor: applicationCursor)
+        let right = sent(Key.rightArrow, mods(shift: true), applicationCursor: applicationCursor)
+        #expect(left == TerminalKeystroke.cursor(.left, applicationMode: applicationCursor))
+        #expect(right == TerminalKeystroke.cursor(.right, applicationMode: applicationCursor))
+    }
+
+    /// ⌘⇧← 也一样：选不了就当 ⌘← 用，而不是干脆不动。
+    @Test("⌘⇧← 就按 ⌘← 算")
+    func commandShiftArrowsBehaveLikeCommandArrows() {
+        #expect(sent(Key.leftArrow, mods(command: true, shift: true)) == "\u{01}")
+        #expect(sent(Key.rightArrow, mods(command: true, shift: true)) == "\u{05}")
+    }
+
+    /// **⌥⌫ 不翻的话是有害的**：SwiftTerm 把它发成 `ESC` 和 `0x08` 两段，
+    /// Ink 一段当一次按键 —— 于是 Claude Code 先收到一个孤零零的 Esc
+    /// （「掐掉这一轮」），岛这边的 Esc 识别也跟着把 tab 判成「用户取消了」。
+    @Test("⌥⌫ 翻成 Ctrl+W")
+    func optionDeleteKillsWord() {
+        #expect(sent(Key.delete, mods(option: true)) == "\u{17}")
+    }
+
+    /// ⌥← / ⌥→ SwiftTerm 自己就发对了（实测按词移动正常），别插手。
+    @Test("⌥ 配方向键不动它", arguments: [TerminalKeystroke.KeyCode.leftArrow,
+                                          TerminalKeystroke.KeyCode.rightArrow])
+    func optionArrowsPassThrough(keyCode: UInt16) {
+        #expect(sent(keyCode, mods(option: true)) == nil)
     }
 
     /// 光按方向键当然还是方向键 —— 那是 Claude Code 自己在用的（选单上下选）。
-    @Test("没按 ⌘ 的方向键不动它")
+    @Test("没按修饰键的方向键不动它")
     func bareArrowsPassThrough() {
-        #expect(TerminalKeystroke.lineJump(keyCode: TerminalKeystroke.KeyCode.leftArrow,
-                                           commandOnly: false) == nil)
+        #expect(sent(Key.leftArrow, mods()) == nil)
+        #expect(sent(Key.rightArrow, mods()) == nil)
+        #expect(sent(Key.delete, mods()) == nil)
     }
 
-    /// ⌘ 配别的键不归这里管（⌘W 是岛收起，⌘C/⌘V 是 SwiftTerm 自己的）。
+    /// ⌃ 开头的本来就是 Claude Code 直接在用的，一概不碰。
+    @Test("⌃ 一概不碰")
+    func controlPassesThrough() {
+        #expect(sent(Key.leftArrow, mods(control: true)) == nil)
+        #expect(sent(Key.delete, mods(option: true, control: true)) == nil)
+    }
+
+    /// ⌘ 配别的键不归这里管（⌘W 是岛收起，⌘C/⌘V 走 `editingAction`）。
     @Test("⌘ 配别的键不动它", arguments: [UInt16(13), UInt16(8), UInt16(126), UInt16(125)])
     func otherCommandKeysPassThrough(keyCode: UInt16) {
-        #expect(TerminalKeystroke.lineJump(keyCode: keyCode, commandOnly: true) == nil)
+        #expect(sent(keyCode, mods(command: true)) == nil)
+    }
+
+    /// ↑↓ 的编码复用同一个函数，别让它跑偏。
+    @Test("方向键的两种编码")
+    func cursorEncodings() {
+        #expect(TerminalKeystroke.cursor(.left, applicationMode: false) == "\u{1b}[D")
+        #expect(TerminalKeystroke.cursor(.right, applicationMode: true) == "\u{1b}OC")
+        #expect(TerminalKeystroke.cursor(.up, applicationMode: false) == "\u{1b}[A")
     }
 }
