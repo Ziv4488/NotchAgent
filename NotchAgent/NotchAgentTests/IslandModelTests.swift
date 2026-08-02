@@ -193,18 +193,6 @@ struct IslandModelTests {
                 < m.geometry.screenFrame.height)
     }
 
-    // MARK: - 模式
-
-    // 岛不再自己轮换模式（`cycleMode` 已删）：⇧Tab 一路放行给终端，
-    // 由 Claude Code 自己切，岛只从 hook payload 里读回结果。
-    // 但档位名仍要和终端里显示的是同一个词，这条还得盯着。
-
-    @Test("模式档位与 Claude Code 自己的选单一致，不翻译")
-    func modesMatchClaudeCode() {
-        #expect(SessionUsage.Mode.allCases.map(\.label)
-                == ["Manual", "Accept edits", "Plan", "Auto"])
-    }
-
     // MARK: - 改名
 
     @Test("改名落到 tab 上")

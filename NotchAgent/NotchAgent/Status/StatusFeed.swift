@@ -19,12 +19,6 @@ struct SessionSignal: Equatable {
     var activity: String?
     /// `SessionStart` 带来的 Claude Code 会话标识，用来做绑定。
     var claudeSessionID: String?
-    /// payload 里带的权限模式。
-    var mode: SessionUsage.Mode?
-    /// 会话记录的路径。上下文占用要从这个文件里读。
-    var transcriptPath: String?
-    /// 子代理数量的增减：`Task` 工具开始 +1，结束 -1。
-    var subagentDelta: Int = 0
     /// 这条事件是否应该把岛推到 `notice`（完成未读 / 等你回话）。
     var demandsAttention: Bool = false
 }
@@ -32,13 +26,6 @@ struct SessionSignal: Equatable {
 enum StatusFeed {
     static func signal(for event: HookEvent) -> SessionSignal {
         var signal = SessionSignal()
-        signal.mode = event.permissionMode.flatMap(SessionUsage.Mode.init(wireName:))
-        signal.transcriptPath = event.transcriptPath
-        // 子代理没有专门的 hook，但它就是 `Task` 工具：开始一个 +1，回来一个 -1。
-        if event.toolName == "Task" {
-            signal.subagentDelta = event.kind == .preToolUse ? 1 : (event.kind == .postToolUse ? -1 : 0)
-        }
-
         switch event.kind {
         case .sessionStart:
             // **只认领这个会话，不动状态。**

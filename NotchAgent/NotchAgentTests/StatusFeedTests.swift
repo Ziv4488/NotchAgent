@@ -78,12 +78,6 @@ struct StatusFeedTests {
         #expect(signal.status?.isAlive == true)
     }
 
-    @Test("事件里的 permission_mode 直接落到模式芯片上")
-    func carriesMode() throws {
-        #expect(try signal("pre-tool-use-read").mode == .manual)
-        #expect(try signal("pre-tool-use-unknown").mode == .acceptEdits)
-    }
-
     /// Claude Code 每次升级都可能加新工具。那时候岛该说「工作中」，
     /// 不该显示空白，更不该崩。
     @Test("没见过的工具名降级成通用文案")

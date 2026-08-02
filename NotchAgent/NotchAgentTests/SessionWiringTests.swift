@@ -91,13 +91,6 @@ struct SessionWiringTests {
         #expect(model.tabs[0].startedAt == startedAt)
     }
 
-    @Test("事件里的模式落到芯片上")
-    func modeLandsOnChip() {
-        let (model, id) = modelWithOneTab()
-        model.apply(SessionSignal(mode: .plan), to: id)
-        #expect(model.tabs[0].usage.mode == .plan)
-    }
-
     @Test("对不上任何 tab 的信号被忽略，不会误改别人的状态")
     func ignoresUnknownTab() {
         let (model, _) = modelWithOneTab()

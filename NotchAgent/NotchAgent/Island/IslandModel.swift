@@ -9,40 +9,16 @@
 import SwiftUI
 import Observation
 
-/// 会话的模式与子代理数，都由 hook 喂进来。
+/// 用量与模式这一整块 **2026-08-02 全删了**，这里只留一句交代。
 ///
-/// 这里原本还有三项额度（上下文 / 5 小时 / 周）。**整块删掉了**：
-/// 终端里 Claude Code 自己那条 statusline 就写着上下文和模式，岛再抄一遍是
-/// 同一份信息占两行，还多一处会对不上的地方；5 小时和周的实时值更是只能拿
-/// 钥匙串里的 OAuth token 去打接口。用户 2026-08-01 拍板不要了。
-/// 连同读法（`UsageProbe` 与它的测试）一起删，不留半截死代码。
-struct SessionUsage: Equatable {
-    /// 当前权限模式。
-    var mode: Mode = .manual
-    /// 正在跑的子代理数量。
-    var subagents: Int = 0
-
-    /// Claude Code 的四档权限模式，⇧Tab 依次轮换。
-    ///
-    /// 名称与顺序照抄 Claude Code 自己的模式选单（Manual / Accept edits / Plan / Auto），
-    /// **不翻译** —— 岛显示的档位必须和用户在终端里看到的是同一个词，
-    /// 否则「我现在到底在哪个模式」这件最要紧的事会对不上。
-    enum Mode: CaseIterable, Equatable {
-        case manual, acceptEdits, plan, auto
-
-        var label: String {
-            switch self {
-            case .manual: "Manual"
-            case .acceptEdits: "Accept edits"
-            case .plan: "Plan"
-            case .auto: "Auto"
-            }
-        }
-
-        /// Manual 之外都要看得见 —— 用户得知道自己现在在什么模式下按回车。
-        var isDefault: Bool { self == .manual }
-    }
-}
+/// 8/1 先删的是三项额度（上下文 / 5 小时 / 周）和读它们的 `UsageProbe`：
+/// 终端里 Claude Code 自己那条 statusline 就写着，岛再抄一遍是同一份信息占两行。
+/// 剩下的 `mode`（权限档位）和 `subagents`（子代理数）当时留了下来 —— hook 一直在
+/// 解析、一直往 tab 上写，**界面上一个都不画**。活着的解析配死掉的展示，
+/// 还有六条测试守着一份没人看的数据。8/2 用户拍板一起删。
+///
+/// 要找当初查证过的事实（`permission_mode` 的四个内部标识、`Task` 工具的起止
+/// 对应子代理的增减）去翻 git。
 
 /// tab 的一格。第 2 阶段会被 `SessionKit` 的真实会话替换。
 struct IslandTab: Identifiable, Equatable {
@@ -87,7 +63,6 @@ struct IslandTab: Identifiable, Equatable {
     var accent: Color
     /// 本轮开始的时刻，状态带右侧的计时从这里算。
     var startedAt: Date
-    var usage: SessionUsage
     /// 工作目录。重启恢复和「继续上次会话」都要它。
     var directory: String?
     /// 收起态状态带上那行字：「读 session.ts」。由 hook 事件驱动，
@@ -104,7 +79,7 @@ struct IslandTab: Identifiable, Equatable {
 
     init(id: UUID = UUID(), title: String, kind: Kind, status: Status,
          unread: Bool = false, accent: Color,
-         startedAt: Date = .now, usage: SessionUsage = SessionUsage(),
+         startedAt: Date = .now,
          directory: String? = nil, activity: String? = nil, isDetached: Bool = false,
          endedAbnormally: Bool = false) {
         self.id = id
@@ -114,7 +89,6 @@ struct IslandTab: Identifiable, Equatable {
         self.unread = unread
         self.accent = accent
         self.startedAt = startedAt
-        self.usage = usage
         self.directory = directory
         self.activity = activity
         self.isDetached = isDetached
@@ -448,10 +422,6 @@ final class IslandModel {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 
         if let activity = signal.activity { tabs[index].activity = activity }
-        if let mode = signal.mode { tabs[index].usage.mode = mode }
-        if signal.subagentDelta != 0 {
-            tabs[index].usage.subagents = max(0, tabs[index].usage.subagents + signal.subagentDelta)
-        }
         if let status = signal.status {
             let mapped = IslandTab.Status(status)
             // 一轮开始就重置计时。状态带右边显示的是「这一轮跑了多久」，
@@ -783,7 +753,6 @@ final class IslandModel {
     func debugStartSession(named name: String, directory: String? = nil) {
         let tab = IslandTab(title: name, kind: .cli, status: .running,
                             accent: Color(red: 0.85, green: 0.47, blue: 0.34),
-                            usage: SessionUsage(mode: .manual, subagents: 2),
                             directory: directory)
         tabs.append(tab)
         if selectedTabID == nil { selectedTabID = tab.id }

@@ -28,8 +28,7 @@ struct HookEvent: Equatable {
     var kind: Kind
     var sessionID: String
     var cwd: String? = nil
-    /// 该会话的 JSONL 记录路径。岛目前不读它 —— 留着是因为 hook 载荷里就有这一项。
-    var transcriptPath: String? = nil
+    /// 触发这条事件的工具名（`Read` / `Edit` / `Bash` …）。
     var toolName: String? = nil
     /// `tool_input` 里最能说明「在动什么」的那个值：文件路径、命令、URL。
     var toolTarget: String? = nil
@@ -40,11 +39,12 @@ struct HookEvent: Equatable {
     /// 文档里没有这个字段，是探针抓出来的。有它就能把「在等你批权限」和
     /// 「闲着太久提醒你一声」分开 —— 前者该让岛快闪催人，后者不该。
     var notificationType: String? = nil
-    /// payload 里带的权限模式（`default` / `acceptEdits` / `plan` / `bypassPermissions`）。
-    ///
-    /// 计划里原本打算让用户在岛上点模式芯片、再想办法喂给 CLI；
-    /// 探针发现 payload **本来就带着它**，于是方向反过来：以 CLI 为准，岛只负责显示。
-    var permissionMode: String? = nil
+
+    // payload 里还有 `permission_mode` 和 `transcript_path`，**故意不解析**：
+    // 前者曾经喂给岛上的模式芯片、后者喂给用量条，两样都在 2026-08-01/08-02
+    // 删掉了。解析一个没人看的字段只会让人以为它还有用。要用的时候去翻 git，
+    // 那里记着四个内部标识（`default`/`acceptEdits`/`plan`/`bypassPermissions`）
+    // 和它们对应的显示名。
 
     static func decode(_ data: Data) -> HookEvent? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -64,12 +64,10 @@ struct HookEvent: Equatable {
             kind: kind,
             sessionID: sessionID,
             cwd: object["cwd"] as? String,
-            transcriptPath: object["transcript_path"] as? String,
             toolName: object["tool_name"] as? String,
             toolTarget: input.flatMap(target(inToolInput:)),
             message: object["message"] as? String,
-            notificationType: object["notification_type"] as? String,
-            permissionMode: object["permission_mode"] as? String)
+            notificationType: object["notification_type"] as? String)
     }
 
     /// 不同工具把「对象」放在不同的键下，按最有信息量的顺序挑第一个命中的。
@@ -78,24 +76,5 @@ struct HookEvent: Equatable {
             if let value = input[key] as? String, !value.isEmpty { return value }
         }
         return nil
-    }
-}
-
-/// 事件里的 `permission_mode` → 岛上显示的档位。
-extension SessionUsage.Mode {
-    /// Claude Code 内部的模式标识。岛显示的是 `label`，两者一一对应但**不是同一个字符串** ——
-    /// 内部标识是 `default`/`bypassPermissions`，用户在 ⇧Tab 选单里看到的是 `Manual`/`Auto`。
-    var wireName: String {
-        switch self {
-        case .manual: "default"
-        case .acceptEdits: "acceptEdits"
-        case .plan: "plan"
-        case .auto: "bypassPermissions"
-        }
-    }
-
-    init?(wireName: String) {
-        guard let match = Self.allCases.first(where: { $0.wireName == wireName }) else { return nil }
-        self = match
     }
 }

@@ -173,20 +173,47 @@ final class IslandWindowController {
                   let bounds = CGRect(dictionaryRepresentation: raw as! CFDictionary)
             else { continue }
 
-            if Self.isFullScreenBounds(bounds, screenSize: screen.frame.size) { return true }
+            if Self.isFullScreenBounds(bounds, screenSize: screen.frame.size,
+                                       menuBarHeight: Self.menuBarInset(of: screen)) { return true }
         }
         return false
     }
 
+    /// 屏幕顶部被菜单栏占掉多少。
+    ///
+    /// **不用 `safeAreaInsets.top`**：那个只在有刘海的机器上非零，无刘海屏返回 0，
+    /// 而那些机器上菜单栏照样占着 24pt。`frame.maxY - visibleFrame.maxY` 两边都对，
+    /// 而且实测在**全屏 Space 里也一样**（Dock 的 inset 会消失，菜单栏那条不会）。
+    static func menuBarInset(of screen: NSScreen) -> CGFloat {
+        max(0, screen.frame.maxY - screen.visibleFrame.maxY)
+    }
+
     /// 一个窗口的 bounds 算不算全屏。
     ///
-    /// 全屏窗口连菜单栏那条一起盖住，普通的「最大化」盖不到 —— 用这个区分，
-    /// 否则用户一把窗口最大化岛就消失了。
-    /// `bounds` 来自 `CGWindowList`，坐标原点在**左上**，所以 `minY == 0` 才是真的顶到上沿。
-    static func isFullScreenBounds(_ bounds: CGRect, screenSize: CGSize) -> Bool {
-        bounds.minY <= 0
-            && bounds.width >= screenSize.width - 1
-            && bounds.height >= screenSize.height - 1
+    /// **原来的判据（`minY <= 0 && height >= 屏高 - 1`）在刘海机上从来没成立过。**
+    /// 2026-08-02 拿一个真的 `toggleFullScreen` 窗口实测（探针见提交记录）：
+    ///
+    /// | 状态 | 那个窗口的 bounds | `visibleFrame` |
+    /// |---|---|---|
+    /// | 普通最大化 | `0,33 1512x901` | `(0,48,1512,901)` |
+    /// | **真全屏** | `0,33 1512x949` | `(0,0,1512,949)` |
+    ///
+    /// 刘海机上全屏窗口**也不盖菜单栏那 33pt** —— 系统把那一条留给自己。
+    /// 于是 `minY` 恒为 33、`height` 恒为 949，判据永远为假，岛在全屏 app 上
+    /// 一直赖着不走。用户 2026-08-02 直接甩了张截图过来：全屏着，岛还在上面。
+    ///
+    /// 真正的区分点是**下沿**：全屏窗口一直铺到屏幕最底、把 Dock 那一条也吃掉；
+    /// 最大化的窗口停在 Dock 上面（Dock 自动隐藏时也还差那 4pt 的热区）。
+    /// Dock 摆在左右两侧时最大化窗口的**宽度**又不够，同样漏不过去。
+    ///
+    /// `bounds` 来自 `CGWindowList`，坐标原点在**左上**。
+    static func isFullScreenBounds(_ bounds: CGRect, screenSize: CGSize,
+                                   menuBarHeight: CGFloat) -> Bool {
+        bounds.width >= screenSize.width - 1
+            // 顶：要么顶到上沿（无刘海），要么紧贴在菜单栏那一条下面（有刘海）。
+            && bounds.minY <= menuBarHeight + 2
+            // 底：必须真的铺到屏幕最底 —— 这一条才是和「最大化」的分界线。
+            && bounds.maxY >= screenSize.height - 1
     }
 
     // MARK: - 焦点与收起

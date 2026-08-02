@@ -69,17 +69,31 @@ struct CLISessionTests {
 
     /// 岛被拖宽之后 PTY 的列数必须跟着变，否则 Claude Code 的 diff 和表格
     /// 会照着旧宽度排版，看起来像是渲染坏了。
+    ///
+    /// **子进程是「等到尺寸变了就走」，不是「睡固定的一段」。**
+    /// 原来写的是 `sleep 0.8; stty size`，而测试这边睡 200ms 再发 resize ——
+    /// 两个时间赛跑。单跑没事，2026-08-02 加了两套要起真窗口的 UI 测试之后，
+    /// 满负荷下那 200ms 会被拉长到 800ms 开外，于是 stty 打印的是**旧尺寸**，
+    /// 这条毫无征兆地红了。现在轮询到位即止：来得快就跑得快，来得慢就多等，
+    /// 三秒都没等到才算真的没送达。
     @Test("resize 之后 PTY 里的 stty 报出新的行列数")
     func resizeReachesThePTY() async throws {
         let output = URL(fileURLWithPath: NSTemporaryDirectory())
             .appending(path: "notch-stty-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: output) }
 
-        let session = session("sleep 0.8; stty size > '\(output.path)'")
+        let session = session("""
+            for _ in $(seq 60); do
+              size=$(stty size)
+              [ "$size" = "40 132" ] && break
+              sleep 0.05
+            done
+            printf '%s' "$size" > '\(output.path)'
+            """)
         try session.start()
         try await Task.sleep(for: .milliseconds(200))
         session.resize(cols: 132, rows: 40)
-        _ = await waitUntilDone(session)
+        _ = await waitUntilDone(session, timeout: 8)
 
         let reported = (try String(contentsOf: output, encoding: .utf8))
             .trimmingCharacters(in: .whitespacesAndNewlines)

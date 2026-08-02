@@ -55,25 +55,9 @@ struct HookEventTests {
         #expect(event.message == "Claude needs your permission")
     }
 
-    /// 原计划是让用户在岛上点模式芯片、再想办法把选择喂给 CLI。
-    /// 探针发现 payload 本来就带着 `permission_mode`，方向于是反过来：CLI 为准，岛只显示。
-    @Test("payload 里的 permission_mode 能对上岛上显示的档位")
-    func permissionModeMapsToChip() throws {
-        let event = try #require(HookEvent.decode(try HookFixtures.data("pre-tool-use-read")))
-        #expect(event.permissionMode == "default")
-        #expect(SessionUsage.Mode(wireName: "default") == .manual)
-        #expect(SessionUsage.Mode(wireName: "bypassPermissions") == .auto)
-        #expect(SessionUsage.Mode(wireName: "acceptEdits") == .acceptEdits)
-        #expect(SessionUsage.Mode(wireName: "plan") == .plan)
-        #expect(SessionUsage.Mode(wireName: "somethingNew") == nil)
-    }
-
-    @Test("四个档位的内部标识与显示名一一对应，没有漏的")
-    func everyModeHasAWireName() {
-        for mode in SessionUsage.Mode.allCases {
-            #expect(SessionUsage.Mode(wireName: mode.wireName) == mode)
-        }
-    }
+    // 这里原来还有两条 `permission_mode` → 模式档位的映射测试。
+    // 那一整套（模式芯片、子代理计数）2026-08-02 删掉了，payload 里的
+    // `permission_mode` 现在**故意不解析** —— 见 `HookEvent` 里那段注释。
 
     /// Claude Code 每次升级都往 payload 里加字段（实测 2.1.220 就比文档多出
     /// effort / prompt_id / background_tasks / session_crons）。
