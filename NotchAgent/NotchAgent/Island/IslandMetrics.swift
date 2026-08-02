@@ -23,9 +23,13 @@ struct IslandConstants: Equatable, Sendable {
     /// tab 条高度。
     var tabStripHeight: CGFloat = 34
     /// expanded 态内容区的默认高度（可拖拽调整并记住）。
-    var contentHeight: CGFloat = 320
-    /// expanded 态用量条高度（上下文 / 5 小时 / 周 / mode / subagent）。
-    var usageBarHeight: CGFloat = 22
+    ///
+    /// **342 = 原来的 320 + 用量条那 22。** 用量条 2026-08-01 拆掉了，但它的高度
+    /// 一直还留在 `expandedChromeHeight` 里 —— 岛照旧按「有那条 bar」的尺寸开，
+    /// 多出来的 22pt 被内容区（`maxHeight: .infinity`）默默吃掉。也就是说
+    /// 内容区**实际**一直是 342，只有常量在说 320。这里把那 22pt 从 chrome
+    /// 挪回内容区，岛的总高一个像素都没变，但每个数都对得上自己的名字了。
+    var contentHeight: CGFloat = 342
     /// expanded 态输入框（含外边距）高度。
     var inputBarHeight: CGFloat = 44
     /// 无刘海屏的宽度基准，替代刘海宽度（spec 3.4）。
@@ -63,10 +67,13 @@ struct IslandMetrics {
         self.expandedContentHeight = expandedContentHeight ?? constants.contentHeight
     }
 
-    /// expanded 态里内容区之外的固定开销：状态带 + tab 条 + 用量条 + 输入框。
+    /// expanded 态里内容区之外的固定开销：状态带 + tab 条 + 输入框。
+    ///
+    /// 这三样是**真的画出来**的三层。曾经还加过一个 `usageBarHeight`（22），
+    /// 用量条拆掉之后它还留在这个和里，于是 chrome 报的高度比实际多 22pt、
+    /// 内容区反过来少报同样多。两个数一起改（见 `contentHeight`），总高不变。
     var expandedChromeHeight: CGFloat {
-        geometry.menuBarHeight + constants.tabStripHeight
-            + constants.usageBarHeight + constants.inputBarHeight
+        geometry.menuBarHeight + constants.tabStripHeight + constants.inputBarHeight
     }
 
     /// 宽度基准：有刘海取刘海实际宽度，无刘海取固定值。
@@ -115,8 +122,10 @@ struct IslandMetrics {
         420...max(420, geometry.screenFrame.width - 160)
     }
 
+    /// 下限 182 而不是 160：`contentHeight` 的口径变了（见上面那两处），
+    /// 同一个「岛能缩到多矮」换算过来就是 160 + 22。拖到最矮时岛的高度不变。
     var expandedContentHeightRange: ClosedRange<CGFloat> {
-        160...max(160, geometry.screenFrame.height * 0.85 - expandedChromeHeight)
+        182...max(182, geometry.screenFrame.height * 0.85 - expandedChromeHeight)
     }
 
     /// 这块屏幕上岛能达到的最大尺寸。面板按它开，之后全程不动。

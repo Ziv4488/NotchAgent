@@ -22,7 +22,33 @@ struct TabStrip: View {
     /// 上一次点在哪个 tab 上、什么时候。双击靠它自己数（见 `tapped(_:)`）。
     @State private var lastTap: (id: UUID, at: Date)?
 
+    /// tab 条。
+    ///
+    /// **横向可滚动。** 岛的宽度有上限（notice 态按标题量出来、封顶在展开宽度；
+    /// 展开态就是用户拖出来那么宽），tab 一多，`HStack` 会径直画出边界然后被
+    /// 岛的轮廓切掉 —— 后面那几个 tab 不是变窄，是**整个消失**，连带末尾的 ＋
+    /// 也点不到，一个 tab 都关不掉了。
+    ///
+    /// macOS 上横向滚动走的是触控板两指横扫，不是拖拽，所以和「拖着 tab 换位置」
+    /// 那条 `DragGesture` 不冲突 —— 两者可以共存。
     var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                strip
+            }
+            // 装得下就别让它橡皮筋 —— 只有一两个 tab 时横着晃一下很廉价。
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .frame(height: Layout.stripHeight)
+            // 切到一个被滚出去的 tab（点通知、⌘1…9）时，得把它带回视野里，
+            // 否则岛看着毫无反应：内容区换了，但 tab 条上高亮的那个在屏幕外。
+            .onChange(of: model.selectedTab?.id) { _, id in
+                guard let id else { return }
+                withAnimation(IslandTheme.morph) { proxy.scrollTo(id, anchor: .center) }
+            }
+        }
+    }
+
+    private var strip: some View {
         HStack(spacing: Layout.tabGap) {
             ForEach(model.tabs) { tab in
                 TabChip(tab: tab,
@@ -51,7 +77,11 @@ struct TabStrip: View {
                     // 被拖的那个要压在别人上面，否则挪过去的一路上会被邻居切掉一半。
                     .zIndex(draggingID == tab.id ? 1 : 0)
                     .gesture(drag(tab))
+                    // 给 ScrollViewReader 认的。用 tab 自己的 id，
+                    // 和 `selectedTabID` 是同一个东西，滚过去不用再翻译一次。
+                    .id(tab.id)
             }
+            if model.hookChannelDegraded { degradedHint }
             Button(action: onNewTask) {
                 Text("＋")
                     .font(IslandTheme.tabFont)
@@ -61,10 +91,22 @@ struct TabStrip: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, Layout.stripHPadding)
         .frame(height: Layout.stripHeight)
+    }
+
+    /// hook 通道没连上时挂在 ＋ 前面的那一点提示（spec 6.4 的降级）。
+    ///
+    /// **要低调。** 终端本身完全正常，能干的活一件不少，只是岛看不到进度了；
+    /// 拿一条横幅去挡住半个岛是过度反应。一个琥珀色小图标 + 悬停说明就够，
+    /// 它解释的是「为什么状态带上只有项目名」这一个疑问。
+    private var degradedHint: some View {
+        Image(systemName: "bolt.horizontal.circle")
+            .font(.system(size: 11))
+            .foregroundStyle(IslandTheme.amber.opacity(0.75))
+            .padding(.horizontal, 2)
+            .help("状态通道没连上：终端照常用，但岛读不到进度，收起态只显示「运行中（无详情）」。")
     }
 
     /// 点了一下某个 tab。
@@ -286,6 +328,8 @@ extension TabStrip {
         static let iconSize: CGFloat = 14
         static let minFieldWidth: CGFloat = 44
         static let closeSize: CGFloat = 12
+        /// hook 降级提示那个小图标连内边距占多宽（见 `degradedHint`）。
+        static let degradedHintWidth: CGFloat = 15
         /// 手指头挪多远才算是在拖 tab 而不是在点它。
         static let dragThreshold: CGFloat = 5
         /// 越过邻居多少才换位，按邻居宽度的比例算。
@@ -328,13 +372,17 @@ extension TabStrip {
             + 5 + Layout.closeSize
     }
 
-    static func measuredWidth(for tabs: [IslandTab]) -> CGFloat {
+    static func measuredWidth(for tabs: [IslandTab], hookDegraded: Bool = false) -> CGFloat {
         var width = Layout.stripHPadding * 2
 
         for tab in tabs {
             width += chipWidth(for: tab)
             width += Layout.tabGap
         }
+
+        // 降级提示那个小图标也占地方 —— 不算进来的话 notice 态的岛会窄一截，
+        // 末尾的 ＋ 正好被切掉半个。
+        if hookDegraded { width += Layout.degradedHintWidth + Layout.tabGap }
 
         // 末尾的 ＋
         let plusWidth = ("＋" as NSString).size(withAttributes: [.font: titleFont]).width

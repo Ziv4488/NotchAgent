@@ -95,11 +95,18 @@ struct IslandTab: Identifiable, Equatable {
     var activity: String?
     /// 进程已经退出（正常或异常），只能「继续上次会话」重开。
     var isDetached: Bool
+    /// 退出得**不正常**：非零退出码，或者进程中途崩了。
+    ///
+    /// 和 `isDetached` 分开：那个只说「进程没了」，正常 `/exit` 也是它。
+    /// 内容区要区别对待 —— 正常结束是一句平静的交代，异常退出得说清楚
+    /// 到底发生了什么（退出码在 `activity` 里），不然用户只看到一块黑。
+    var endedAbnormally: Bool
 
     init(id: UUID = UUID(), title: String, kind: Kind, status: Status,
          unread: Bool = false, accent: Color,
          startedAt: Date = .now, usage: SessionUsage = SessionUsage(),
-         directory: String? = nil, activity: String? = nil, isDetached: Bool = false) {
+         directory: String? = nil, activity: String? = nil, isDetached: Bool = false,
+         endedAbnormally: Bool = false) {
         self.id = id
         self.title = title
         self.kind = kind
@@ -111,6 +118,7 @@ struct IslandTab: Identifiable, Equatable {
         self.directory = directory
         self.activity = activity
         self.isDetached = isDetached
+        self.endedAbnormally = endedAbnormally
     }
 }
 
@@ -182,8 +190,11 @@ final class IslandModel {
     }
 
     /// notice 态要按 tab 条实际内容宽度撑开。
+    ///
+    /// 撑不下的时候由 `IslandMetrics` 封顶在展开宽度，多出来的 tab 归 tab 条
+    /// 自己横向滚动（见 `TabStrip.body`）—— 岛不会为了装下第九个 tab 而横跨整块屏幕。
     var tabStripWidth: CGFloat {
-        TabStrip.measuredWidth(for: tabs)
+        TabStrip.measuredWidth(for: tabs, hookDegraded: hookChannelDegraded)
     }
 
     /// 岛的外形里跟 tab 有关的那一部分：**几个、多宽**。
@@ -410,8 +421,17 @@ final class IslandModel {
     /// 起不来时给用户看的话（找不到 `claude`、目录没权限之类）。
     var launchError: String?
 
+    /// hook 通道没连上。见 `SessionRuntime.hookChannelFailure`。
+    ///
+    /// 在 `attach` 时抄进来一份而不是每次去问 `runtime` —— 那个字段不是
+    /// `@Observable` 的，视图读它不会建立依赖，改了也不会重画。
+    /// 通道的成败在 `runtime.start()` 里一次定死（`attach` 之后不再变），
+    /// 抄一份反而是最诚实的表达。
+    private(set) var hookChannelDegraded = false
+
     func attach(runtime: SessionRuntime) {
         self.runtime = runtime
+        hookChannelDegraded = runtime.hookChannelFailure != nil
         runtime.onSignal = { [weak self] id, signal in self?.apply(signal, to: id) }
         runtime.onStatusChanged = { [weak self] id, status in self?.apply(status, to: id) }
         runtime.onMenu = { [weak self] id, menu in self?.apply(menu, to: id) }
@@ -454,18 +474,51 @@ final class IslandModel {
     }
 
     /// 进程本身的状态（退出、崩溃）落到 tab 上。
+    ///
+    /// **非零退出要说出退出码。** 原来这里只有 `.failed` 会留下文案，
+    /// `.finished(1)` 和 `.finished(0)` 落到界面上是同一句「会话已结束。」——
+    /// claude 崩了、被 OOM 杀了、参数写错了当场退出，用户看到的都一样，
+    /// 而这三种情况该做的事完全不同。
     func apply(_ status: SessionStatus, to id: SessionID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         switch status {
         case .finished, .failed:
             tabs[index].status = .ended
             tabs[index].isDetached = true
-            tabs[index].activity = nil
-            if case .failed(let reason) = status { tabs[index].activity = reason }
+            tabs[index].activity = Self.endNote(for: status)
+            tabs[index].endedAbnormally = Self.isAbnormal(status)
             send(.sessionStopped)
             persistTabs()
         default:
             tabs[index].status = IslandTab.Status(status)
+        }
+    }
+
+    /// 会话结束时，内容区上那一句话。正常结束是 nil（走默认文案）。
+    ///
+    /// 退出码按 shell 的惯例读：128 以上是被信号杀的，减掉 128 就是信号号
+    /// （`SessionStatus.fromWaitStatus` 就是这么编的）。直接把 143 甩给用户
+    /// 没有意义，说「被终止（SIGTERM）」他才知道不是自己的代码有问题。
+    static func endNote(for status: SessionStatus) -> String? {
+        switch status {
+        case .failed(let reason):
+            return reason
+        case .finished(let code) where code == 0:
+            return nil
+        case .finished(let code) where code > 128:
+            return "会话被终止（信号 \(code - 128)）。"
+        case .finished(let code):
+            return "会话异常退出，退出码 \(code)。"
+        default:
+            return nil
+        }
+    }
+
+    static func isAbnormal(_ status: SessionStatus) -> Bool {
+        switch status {
+        case .failed: true
+        case .finished(let code): code != 0
+        default: false
         }
     }
 

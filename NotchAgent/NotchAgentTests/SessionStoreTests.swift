@@ -156,4 +156,35 @@ struct PersistenceTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         #expect(Preferences(defaults: defaults).expandedSize == nil)
     }
+
+    /// 内容区高度的口径 2026-08-02 变了（用量条那 22pt 从 chrome 挪进来）。
+    /// 老版本存下的数是**旧口径**的，直接拿来用会让岛当场矮 22pt ——
+    /// 用户什么都没动，岛却变了。读的时候补一次。
+    @Test("老版本存的高度读出来自动补上那 22pt")
+    func oldHeightIsMigratedOnce() {
+        let suite = "notch-test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // 老版本写下的样子：只有两个尺寸键，没有迁移标记。
+        defaults.set(720.0, forKey: "expandedWidth")
+        defaults.set(480.0, forKey: "expandedContentHeight")
+
+        let preferences = Preferences(defaults: defaults)
+        #expect(preferences.expandedSize?.contentHeight == 480 + Preferences.usageBarReclaim)
+        // **只补一次。** 每读一次加 22 的话，岛会一次比一次高。
+        #expect(preferences.expandedSize?.contentHeight == 480 + Preferences.usageBarReclaim)
+    }
+
+    /// 新装的 app 从来没有旧口径的值，存完再读不该被加料。
+    @Test("新存进去的高度不会再被补")
+    func freshHeightIsNotMigrated() {
+        let suite = "notch-test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = Preferences(defaults: defaults)
+        preferences.expandedSize = (720, 480)
+        #expect(preferences.expandedSize?.contentHeight == 480)
+    }
 }

@@ -118,15 +118,40 @@ struct IslandMetricsTests {
         }
     }
 
-    @Test("expanded 高度 = 菜单栏 + tab 条 + 内容区 + 用量条 + 输入框")
+    @Test("expanded 高度 = 菜单栏 + tab 条 + 内容区 + 输入框")
     func expandedHeight() {
         for (name, geometry) in allGeometries {
             let metrics = IslandMetrics(geometry: geometry)
             let c = metrics.constants
             let expected = geometry.menuBarHeight + c.tabStripHeight
-                + c.contentHeight + c.usageBarHeight + c.inputBarHeight
+                + c.contentHeight + c.inputBarHeight
             #expect(metrics.size(for: .expanded).height == expected, "\(name)")
         }
+    }
+
+    /// **用量条拆掉时留下的那 22pt，只是换了个地方待着，不是被删了。**
+    ///
+    /// 它原来算在 chrome 里（`usageBarHeight`），2026-08-02 挪进了 `contentHeight`。
+    /// 挪动的全部要求就是：岛长出来还是那么高。这条把两个口径下的默认高度
+    /// 钉死在一起 —— 谁再顺手把 342 改回 320，这里立刻红。
+    @Test("挪那 22pt 之前之后，展开态默认高度一样")
+    func reclaimingTheUsageBarKeepsTheHeight() {
+        for (name, geometry) in allGeometries {
+            let metrics = IslandMetrics(geometry: geometry)
+            // 旧口径：菜单栏 + 34 + 22(用量条) + 44 + 320(内容区)
+            let old = geometry.menuBarHeight + 34 + 22 + 44 + 320
+            #expect(metrics.size(for: .expanded).height == old, "\(name)")
+        }
+    }
+
+    /// 最矮那一档也不能因为换口径矮下去。
+    @Test("拖到最矮时，岛的高度和换口径之前一样")
+    func shortestExpandedIsUnchanged() {
+        let geometry = FakeScreenGeometry.macBook14
+        let metrics = IslandMetrics(geometry: geometry,
+                                    expandedContentHeight: IslandMetrics(geometry: geometry)
+                                        .expandedContentHeightRange.lowerBound)
+        #expect(metrics.size(for: .expanded).height == geometry.menuBarHeight + 34 + 22 + 44 + 160)
     }
 
     @Test("拖大内容区，expanded 只长内容区那一截，其余高度不动")

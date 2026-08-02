@@ -19,7 +19,14 @@ struct Preferences {
         static let claudePath = "claudeExecutablePath"
         static let expandedWidth = "expandedWidth"
         static let expandedContentHeight = "expandedContentHeight"
+        static let contentHeightReclaimedUsageBar = "contentHeightReclaimedUsageBar"
     }
+
+    /// 用量条拆掉后留在 chrome 里的那 22pt，2026-08-02 挪回了内容区
+    /// （见 `IslandMetrics.expandedChromeHeight`）。**存过的高度得跟着加回来**，
+    /// 否则口径一换，已经拖过尺寸的岛会当场矮 22pt —— 用户没动过任何东西，
+    /// 岛却变了，那是纯粹的回归。只补一次，补完记个标记。
+    static let usageBarReclaim: CGFloat = 22
 
     /// 用户手填的 `claude` 绝对路径。自动找得到时是 nil。
     var claudePath: String? {
@@ -28,16 +35,27 @@ struct Preferences {
     }
 
     /// 拖拽调整过的展开尺寸。没存过时返回 nil，让调用方用默认值。
+    ///
+    /// 读的时候顺手做一次口径迁移（见 `usageBarReclaim`）。放在 getter 里而不是
+    /// 单独一个 `migrate()`：迁移必须发生在**任何人读到这个值之前**，
+    /// 而唯一的读口就是这里 —— 少一个必须被记得调用的步骤。
     var expandedSize: (width: CGFloat, contentHeight: CGFloat)? {
         get {
             let width = defaults.double(forKey: Key.expandedWidth)
-            let height = defaults.double(forKey: Key.expandedContentHeight)
+            var height = defaults.double(forKey: Key.expandedContentHeight)
             guard width > 0, height > 0 else { return nil }
+            if !defaults.bool(forKey: Key.contentHeightReclaimedUsageBar) {
+                height += Double(Self.usageBarReclaim)
+                defaults.set(height, forKey: Key.expandedContentHeight)
+                defaults.set(true, forKey: Key.contentHeightReclaimedUsageBar)
+            }
             return (CGFloat(width), CGFloat(height))
         }
         nonmutating set {
             defaults.set(newValue?.width ?? 0, forKey: Key.expandedWidth)
             defaults.set(newValue?.contentHeight ?? 0, forKey: Key.expandedContentHeight)
+            // 刚存进去的已经是新口径了，别让下一次读再给它加一遍 22。
+            defaults.set(true, forKey: Key.contentHeightReclaimedUsageBar)
         }
     }
 }

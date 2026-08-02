@@ -67,11 +67,23 @@ struct RenderSmokeTests {
     }
 
     /// 会话结束后内容区换成「继续上次会话」，也要画得出来。
-    @Test("已结束会话的内容区画得出来")
-    func rendersDetachedContent() {
+    /// 非零退出走的是另一支（警告标 + 退出码 + 「重新启动」）。
+    @Test("已结束会话的内容区画得出来", arguments: [Int32(0), 1, 128 + SIGTERM])
+    func rendersDetachedContent(exitCode: Int32) {
         let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
         model.debugStartSession(named: "a")
-        model.apply(.finished(0), to: model.tabs[0].id)
+        model.apply(.finished(exitCode), to: model.tabs[0].id)
         render(ContentArea(model: model, tab: model.tabs[0]))
+    }
+
+    /// tab 多到装不下时 tab 条要横向滚动（`ScrollView` + `ScrollViewReader`）。
+    /// 这条只保证那一层包装画得出来 —— 真的滚不滚得动是手测 §13.13。
+    @Test("十几个 tab 的 tab 条画得出来")
+    func rendersOverflowingTabStrip() {
+        let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
+        for index in 1...14 { model.debugStartSession(named: "会话-\(index)") }
+        render(TabStrip(model: model), width: 560, height: 34)
+        // 撑爆了才算测到了溢出这条路。
+        #expect(model.tabStripWidth > model.metrics.expandedWidth)
     }
 }

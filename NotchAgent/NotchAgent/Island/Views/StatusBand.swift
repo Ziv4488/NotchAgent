@@ -46,7 +46,7 @@ struct StatusBand: View {
                 StatusDot(status: tab.status)
                 // 在跑的时候显示它在干什么（「读 session.ts」），闲着才显示项目名。
                 // 收起态这一行是唯一的进度窗口，"refactor-auth" 不告诉你任何新信息。
-                Text(tab.status == .running ? (tab.activity ?? tab.title) : tab.title)
+                Text(StatusBand.line(for: tab, hookDegraded: model.hookChannelDegraded))
                     .foregroundStyle(IslandTheme.dim)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -63,6 +63,20 @@ struct StatusBand: View {
         // 状态带只有一行高，任何折行都是错的 —— 宁可截断。
         .lineLimit(1)
         .padding(.leading, 10)
+    }
+
+    /// 收起态那一行字。
+    ///
+    /// 在跑的时候显示它在干什么（「读 session.ts」），闲着才显示项目名 ——
+    /// 收起态这一行是唯一的进度窗口，"refactor-auth" 不告诉你任何新信息。
+    ///
+    /// **hook 通道断了要说出来。** 那时候 `activity` 永远是 nil，退回项目名的话
+    /// 岛看起来就跟「没在跑」一模一样，用户只会以为功能坏了。
+    /// 「运行中（无详情）」是 spec 6.4 定的降级文案：进度没了，但它确实在跑。
+    static func line(for tab: IslandTab, hookDegraded: Bool) -> String {
+        guard tab.status == .running else { return tab.title }
+        if let activity = tab.activity { return activity }
+        return hookDegraded ? "运行中（无详情）" : tab.title
     }
 
     // MARK: - 右侧：计时与窗口数

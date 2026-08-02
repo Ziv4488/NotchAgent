@@ -20,6 +20,14 @@ final class SessionRuntime {
     /// `claude` 在哪、以及登录 shell 的 PATH。启动时解析一次。
     private(set) var location: ClaudeLocator.Result = .notFound(searchPath: "")
 
+    /// hook 通道**没起来**时的原因，起来了就是 nil（spec 6.4 那条降级）。
+    ///
+    /// 这件事以前只写进 `Logger` —— 也就是只有开着 Console.app 的人看得见。
+    /// 用户那边的表现是：终端一切正常，但收起态永远只有项目名、没有
+    /// 「读 session.ts」这种进度，完成也不会亮绿点。看起来像功能坏了，
+    /// 其实是通道没连上。得让界面说出来。
+    private(set) var hookChannelFailure: String?
+
     /// 事件已经翻译成「对某个 tab 的影响」，交给上层落到 UI 上。
     var onSignal: ((SessionID, SessionSignal) -> Void)?
     /// 会话进程状态变了（起来了 / 退出了 / 崩了）。
@@ -53,9 +61,11 @@ final class SessionRuntime {
         }
         do {
             try bridge.start()
+            hookChannelFailure = nil
         } catch {
             // hook 通道起不来不该拖垮整个 app：PTY 那条路是独立的（spec 4.3），
             // 终端照样能用，只是收起态没有进度文案。
+            hookChannelFailure = error.localizedDescription
             log.error("hook 通道启动失败，降级成「运行中（无详情）」：\(error.localizedDescription, privacy: .public)")
         }
 

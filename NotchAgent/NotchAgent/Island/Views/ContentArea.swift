@@ -78,16 +78,27 @@ struct ContentArea: View {
     }
 
     /// 进程已经退出的 tab：会话记录还在 `~/.claude`，可以 `--resume` 接回去。
+    ///
+    /// **正常结束和异常退出长得不一样。** 正常是一句平静的交代；异常要给一个
+    /// 琥珀色的警告标 + 退出码（`tab.activity` 里已经写好了，见
+    /// `IslandModel.endNote`），否则用户只知道「没了」，不知道为什么没了。
+    /// 两种情况下的按钮是同一个 —— 会话记录都还在 `~/.claude`，都接得回去。
     private func detached(_ tab: IslandTab) -> some View {
         panel {
             VStack(spacing: 10) {
+                if tab.endedAbnormally {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(IslandTheme.amber)
+                }
                 Text(tab.activity ?? "会话已结束。")
                     .font(IslandTheme.bodyFont)
-                    .foregroundStyle(IslandTheme.dim)
+                    .foregroundStyle(tab.endedAbnormally ? IslandTheme.bright : IslandTheme.dim)
+                    .multilineTextAlignment(.center)
                 Button {
                     model.resumeTab(tab.id)
                 } label: {
-                    Text("继续上次会话")
+                    Text(tab.endedAbnormally ? "重新启动" : "继续上次会话")
                         .font(IslandTheme.tabFont)
                         .foregroundStyle(Color.white.opacity(0.9))
                         .padding(.horizontal, 12)
