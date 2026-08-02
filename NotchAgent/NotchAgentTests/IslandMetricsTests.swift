@@ -154,6 +154,24 @@ struct IslandMetricsTests {
         #expect(metrics.size(for: .expanded).height == geometry.menuBarHeight + 34 + 22 + 44 + 160)
     }
 
+    /// §8.5b：会话从「在跑」变成「已结束」，岛的**总高度一点都不变**。
+    ///
+    /// 在跑的时候底下没有输入框（键盘整个归终端），结束之后输入框回来 ——
+    /// 那 44pt 是由内容区吸收的，不是加在岛上的。会话状态一变岛就抽搐一下是 bug。
+    @Test("会话结束时岛的总高度不变 —— 输入框那 44pt 由内容区吸收")
+    func endingASessionKeepsTheIslandHeight() {
+        let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
+        model.debugStartSession(named: "a")
+        // 用点击进展开态，不用 `previewState(.expanded)` —— 那个会**再造一个在跑的
+        // 会话**，于是「把这个会话结束掉」之后仍有别的在跑，要测的那个变化根本没发生。
+        model.send(.click)
+        let before = model.size
+
+        model.apply(.finished(0), to: model.tabs[0].id)
+        #expect(model.state == .expanded, "结束事件不该把展开态打断")
+        #expect(model.size == before, "岛从 \(before) 变成了 \(model.size)")
+    }
+
     @Test("拖大内容区，expanded 只长内容区那一截，其余高度不动")
     func expandedGrowsOnlyByContentHeight() {
         let geometry = FakeScreenGeometry.macBook14

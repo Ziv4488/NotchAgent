@@ -397,4 +397,124 @@ struct IslandPixelTests {
         #expect(brighter < 6, "有 \(brighter) 行比底色亮 —— 某一项自带底色了")
     }
 
+
+    // MARK: - §14.12：浮层和岛接成一整块
+
+    /// 浮层是从岛上**长下来**的，不是另外一张卡片。
+    ///
+    /// 中间留一道缝会露出桌面，读起来就成了两样东西（用户报过一次
+    /// 「选项跟岛隔开了」）。这条从岛顶一路扫到浮层底：中间**一个底色像素都不许有**。
+    ///
+    /// 上面那两个角是方的、也不往上盖 —— 盖上去会把 tab 的下沿削平（§14.12b），
+    /// 那件事由 `MenuWiringTests`「挂着浮层时，岛的底部圆角收掉」管着。
+    @Test("浮层和岛之间没有缝")
+    func menuPanelJoinsTheIslandWithoutASeam() throws {
+        let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
+        model.debugStartSession(named: "会话")
+        model.apply(TerminalMenu(question: "要我改这个文件吗？",
+                                 options: [.init(number: 1, title: "Yes", detail: nil),
+                                           .init(number: 2, title: "No", detail: nil)],
+                                 selected: 0),
+                    to: model.tabs[0].id)
+        let menu = try #require(model.pendingMenu, "浮层没挂上，这条测试等于没测")
+        #expect(menu.options.count == 2)
+
+        let size = CGSize(width: model.size.width + 340, height: 460)
+        let image = try raster(IslandShell(model: model), size: size)
+
+        // 挑一条同时穿过岛和浮层的竖线。浮层比岛窄（320 对 345+），所以往里挪一点。
+        let column = image.width / 2 - 80
+        let bottom = try #require((0..<image.height).last { !image.isBackdrop(column, $0) },
+                                  "整条线都是底色 —— 岛和浮层都没画出来")
+        #expect(bottom > Int(model.size.height) + 40, "浮层根本没画出来，只量到了岛")
+
+        let seam = (0...bottom).filter { image.isBackdrop(column, $0) }
+        #expect(seam.isEmpty, "岛和浮层之间有 \(seam.count)pt 的缝，缝里是桌面：\(seam.prefix(8))")
+    }
+
+    // MARK: - §5.0b：「选择其他目录…」钉在列表外面
+
+    /// 项目再多，「选择其他目录…」也不跟着滚走。
+    ///
+    /// 它原来是滚动列表里的最后一行，项目一多就滚出视野 —— 于是
+    /// `~/.claude/projects` 里没有的目录在界面上根本找不到入口
+    /// （用户报的「开不了没会话的目录，只能 resume」）。
+    ///
+    /// **不能用像素比对。** 试过「3 个项目 / 40 个项目各画一遍，比下面那一截」：
+    /// 两种排法下那一截都是一样的（列表把视口填满与否的差别落在更上面），
+    /// 把它挪回列表里测试照样绿。直接量结构才行：滚动视图**底下留了多少地方**。
+    /// 钉住的时候那儿摆着「选择其他目录…」+ 分隔线 + 指令框；
+    /// 挪回列表里就只剩后两样，一下子少掉一整行的高度。
+    @Test("「选择其他目录…」在滚动列表外面，不跟着项目滚走")
+    func chooseOtherStaysPinnedBelowTheList() async throws {
+        let projects = (1...40).map {
+            ProjectDirectory(path: "/tmp/项目-\($0)", lastUsed: .distantPast, hasSessions: true)
+        }
+        let height: CGFloat = 300
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 560, height: height),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        let hosting = NSHostingView(rootView: NewTaskForm(projects: projects,
+                                                          bottomInset: PanelCard.bottomInset,
+                                                          onSubmit: { _, _ in }, onCancel: {}))
+        hosting.frame = CGRect(x: 0, y: 0, width: 560, height: height)
+        window.contentView = hosting
+        window.makeKeyAndOrderFront(nil)
+        hosting.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+
+        let scroll = try #require(Self.scrollView(in: hosting), "项目列表不再是可滚的了")
+        let scrollFrame = scroll.convert(scroll.bounds, to: hosting)
+        let below = height - scrollFrame.maxY
+
+        // 钉住时下面依次是：选择其他目录（约 28）+ 分隔线（1）+ 指令框（约 34）
+        // + 卡片下边距（8）。挪回列表里就少掉那 28 —— 40 这条线把两种排法分得很开。
+        #expect(below > 60, "滚动列表下面只剩 \(Int(below))pt —— 「选择其他目录…」被卷进列表了")
+    }
+
+    private static func scrollView(in view: NSView) -> NSScrollView? {
+        if let scroll = view as? NSScrollView { return scroll }
+        for sub in view.subviews {
+            if let scroll = scrollView(in: sub) { return scroll }
+        }
+        return nil
+    }
+
+    // MARK: - §1.6：悬停只做轻微提亮
+
+    /// 鼠标停在岛上：**只提亮一点点，形状一点不动**。
+    ///
+    /// 「不展开、不预览」是 spec 3.1 定的。这条盯两件事：亮度确实变了
+    /// （没变说明悬停反馈根本没接上，用户会觉得岛是死的），
+    /// 以及岛的轮廓一个像素都没动（一动就是「悬停偷偷改了状态」）。
+    @Test("悬停只让岛亮一点点，形状不动")
+    func hoverOnlyBrightensTheIsland() throws {
+        let idle = IslandModel.previewModel(state: .idle)
+        let hovered = IslandModel.previewModel(state: .idle)
+        hovered.isHovering = true
+
+        let size = canvas(around: idle)
+        let plain = try raster(IslandShell(model: idle), size: size)
+        let lit = try raster(IslandShell(model: hovered), size: size)
+
+        // 取岛体正中一块，比平均灰度。
+        let box = (x: plain.width / 2 - 60, y: 8, w: 40, h: 10)
+        func mean(_ image: Raster) -> CGFloat {
+            var total: CGFloat = 0
+            for y in box.y..<(box.y + box.h) {
+                for x in box.x..<(box.x + box.w) { total += image.gray(x, y) }
+            }
+            return total / CGFloat(box.w * box.h)
+        }
+        let before = mean(plain)
+        let after = mean(lit)
+        #expect(after > before, "悬停没有任何提亮：\(before) → \(after)")
+        #expect(after - before < 0.12, "悬停亮得太多了（\(before) → \(after)），这已经不是「轻微」了")
+
+        // 轮廓一点不动：两张图里岛的边界必须落在同一列。
+        let row = 20
+        let plainLeft = try #require(plain.firstNonBackdrop(row: row))
+        let litLeft = try #require(lit.firstNonBackdrop(row: row))
+        #expect(plainLeft == litLeft, "悬停把岛的形状也改了")
+    }
+
 }
