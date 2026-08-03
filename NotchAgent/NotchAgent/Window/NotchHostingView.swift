@@ -10,7 +10,10 @@
 import AppKit
 import SwiftUI
 
-final class NotchHostingView: NSHostingView<IslandShell> {
+// 不是 `final`：`ResizeCursorTests` 要继承它、盖住 `addCursorRect` 抄一份参数。
+// AppKit 登记进去之后不给任何查询的口子，不抄就没法断言「窗口到底派了什么活下来」
+// —— 而上一版光标改坏，栽的正是「测试自己调了一遍就当作数」。
+class NotchHostingView: NSHostingView<IslandShell> {
 
     /// 岛此刻的尺寸与圆角，由窗口层注入。
     var islandGeometry: () -> (size: CGSize, radii: IslandCornerRadii) = {
@@ -37,6 +40,35 @@ final class NotchHostingView: NSHostingView<IslandShell> {
         // 不单独放行的话点上去没有任何反应（透明区一律不收事件）。
         guard islandPath().contains(local) || menuRect().contains(local) else { return nil }
         return super.hitTest(point)
+    }
+
+    /// 拖拽热区的光标形状。
+    ///
+    /// **登记在这儿，不是登记在手柄自己身上。** 试过在手柄那层塞一个
+    /// `NSViewRepresentable` 去 `addCursorRect`，实机是**一个箭头都不出现**：
+    /// 那层为了不吞点击（§2.2b 的旧账，拖拽层挡掉过 tab 芯片和 ✕）必须
+    /// `hitTest` 返回 nil，而窗口找「该用哪个光标」是要先命中到视图的 ——
+    /// 一个命不中的视图，它登记的矩形也就没人问。
+    ///
+    /// 反过来这里天然合适：`NotchHostingView` 本来就是可命中的（命中范围正好收在
+    /// 岛的轮廓里），热区的位置由手柄各自的 `GeometryReader` 量完报到
+    /// `model.resizeHandleFrames`，和 `menuFrame` 是同一套路子 —— 位置来自真实布局，
+    /// 不用在这儿重算一遍几何。
+    ///
+    /// 不会和终端的 I 型光标打架：终端离岛边还有 15pt（卡片内缩 7 + 它自己的
+    /// padding 8），而最宽的热区（下角）也只探进来 30pt 且只在最底下 20pt，
+    /// 两者不重叠。
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        for (kind, frame) in rootView.model.resizeHandleFrames where !frame.isEmpty {
+            addCursorRect(frame, cursor: kind.cursor)
+        }
+    }
+
+    /// 岛一变形热区就挪位置，登记过的矩形当场过期。
+    override func layout() {
+        super.layout()
+        window?.invalidateCursorRects(for: self)
     }
 
     /// 选项浮层占的那块。没有浮层时是空矩形，`contains` 恒为假。

@@ -11,7 +11,7 @@ struct IslandShell: View {
     @Bindable var model: IslandModel
 
     /// 报告浮层位置用的坐标系。原点就是画布左上角，和 `NotchHostingView` 的一致。
-    fileprivate static let canvas = "island-canvas"
+    static let canvas = "island-canvas"
 
     private var size: CGSize { model.size }
     private var radii: IslandCornerRadii { model.cornerRadii }

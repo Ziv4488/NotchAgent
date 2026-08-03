@@ -92,10 +92,6 @@ struct IslandPixelTests {
             view
         }
         .frame(width: size.width, height: size.height)
-        // 拖拽手柄里那层登记光标的 AppKit 视图要关掉：`ImageRenderer` 画不了
-        // AppKit 内容，会拿一块不透明的黄块（`1.00/0.80/0.00`）顶上去，
-        // 把它底下要量的东西盖住 —— 卡片的下角正好在角手柄底下。
-        .environment(\.installsCursorRects, false)
 
         let renderer = ImageRenderer(content: root)
         renderer.scale = 1

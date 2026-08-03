@@ -501,6 +501,10 @@ final class IslandModel {
     /// 窗口层的命中测试是收在岛轮廓里的，得靠它给这块浮层放行。
     var menuFrame: CGRect = .zero
 
+    /// 五块拖拽热区在画布里的位置，同样由视图层量完报上来。
+    /// `NotchHostingView` 拿它去登记 cursor rect（光标形状），见那边的注释。
+    var resizeHandleFrames: [ResizeHandles.Kind: CGRect] = [:]
+
     /// 选中的那个 tab 现在有没有在问你。**只在收起态给** ——
     /// 展开时终端本身就摆着那个选单，再叠一层浮层是两份同样的东西。
     var pendingMenu: TerminalMenu? {
