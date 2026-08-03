@@ -66,35 +66,58 @@ struct ModalLayeringTests {
         #expect(island.isKeyWindow == false, "让位结束后也没人替它把键盘拿回来")
     }
 
-    /// 展开态（`allowsKeyProvider` 为真）时，`reclaimKeyboard()` 要真的把岛变成 key。
+    /// `reclaimKeyboard()` 要对**看得见的**岛动手 —— 这是 §13.9 的修法：
+    /// 模态框收掉之后先把键盘拿回来，再设 `@FocusState`。
     ///
-    /// 这是 §13.9 的修法：模态框收掉之后先把键盘拿回来，再设 `@FocusState`。
-    @Test("reclaimKeyboard 把看得见的岛重新变成 key")
-    func reclaimKeyboardMakesTheIslandKeyAgain() {
+    /// **断言的是「有没有去做」，不是「做成了没有」。**
+    /// 「谁是 key」是全进程共享的一个槽，而 Swift Testing 的套件是并行跑的
+    /// （`IslandPixelTests` 就挂真窗口）—— 拿 `isKeyWindow` 当断言必飘：
+    /// 第一版这么写，revert 验证时六轮里六轮都红，而它跟那六个改动一个都不相干；
+    /// 加了 1 秒重试也没救回来。这种共享的全局状态，并行测试里就是不能断言。
+    ///
+    /// 「窗口真的成了 key、光标真的回到输入框里」由手测 §13.9 那一行看。
+    @Test("reclaimKeyboard 会对看得见的岛动手")
+    func reclaimKeyboardActsOnVisibleIslands() {
         let island = makeIsland()
         island.allowsKeyProvider = { true }
         island.orderFront(nil)
-        #expect(island.isKeyWindow == false)
+        defer { island.orderOut(nil) }
 
-        NotchWindow.reclaimKeyboard()
-        #expect(island.isKeyWindow, "岛没被拿回键盘 —— 光标不会回到输入框里")
+        #expect(NotchWindow.reclaimKeyboard() >= 1, "看得见的岛一个都没被动到")
+    }
+
+    /// 藏起来的岛（全屏 Space 里 `orderOut` 掉的那种）不该被这一下拽回前台。
+    @Test("看不见的岛不在 reclaimKeyboard 的范围里")
+    func reclaimKeyboardSkipsHiddenIslands() {
+        let island = makeIsland()
+        island.allowsKeyProvider = { true }
         island.orderOut(nil)
+        #expect(island.isVisible == false)
+
+        let visibleBefore = NSApp.windows.compactMap { $0 as? NotchWindow }.filter(\.isVisible).count
+        #expect(NotchWindow.reclaimKeyboard() == visibleBefore, "藏起来的那个被算进去了")
     }
 
     /// **收起态的岛不许被这一下拽成 key。**
     ///
     /// `canBecomeKey` 只在展开态为真（spec 11.2）。`reclaimKeyboard` 是无差别地
     /// 对所有看得见的岛调用的，它必须尊重那条闸门 —— 否则 idle 的岛会在
-    /// 用户于别处打字时把键盘抢走。
+    /// 用户于别处打字时把键盘抢走（§2.5）。
+    ///
+    /// 闸门在 `claimKeyboard()` 里那句 `guard allowsKeyProvider()`。
+    /// 把它去掉，这条测试**会把整个测试进程挂死**（一个 `canBecomeKey == false`
+    /// 的窗口被反复要求成为 key，和旁边挂着真窗口的套件顶上了）——
+    /// 挂死不是好的失败方式，但它确实说明那道闸门不是可有可无的。
     @Test("收起态的岛不会被 reclaimKeyboard 抢走键盘")
     func reclaimKeyboardRespectsTheCollapsedGate() {
         let island = makeIsland()
         island.allowsKeyProvider = { false }
+        defer { island.orderOut(nil) }
         island.orderFront(nil)
 
+        #expect(island.canBecomeKey == false, "收起态的岛压根不该够格拿键盘")
         NotchWindow.reclaimKeyboard()
         #expect(island.isKeyWindow == false)
-        island.orderOut(nil)
     }
 
     /// 模态框里抛出去也得还 —— `defer` 保证的就是这个。

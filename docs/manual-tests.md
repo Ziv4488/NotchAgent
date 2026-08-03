@@ -361,9 +361,16 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 > `@FocusState` 设了也不会有光标。新加的 `NotchWindow.reclaimKeyboard()` 补这一半，
 > 并且照旧尊重 `canBecomeKey` 那道闸门（收起态的岛不许被它拽成 key，spec 11.2）。
 >
-> 三条测试钉着：`ModalLayeringTests`「让位不负责把键盘还回来」（这是 `reclaimKeyboard`
-> 存在的理由）、「reclaimKeyboard 把看得见的岛重新变成 key」、
+> 四条测试钉着（`ModalLayeringTests`）：「让位不负责把键盘还回来」——
+> 这是 `reclaimKeyboard` 存在的理由；「reclaimKeyboard 会对看得见的岛动手」；
+> 「看不见的岛不在 reclaimKeyboard 的范围里」（全屏藏起来的那个不该被拽回前台）；
 > 「收起态的岛不会被 reclaimKeyboard 抢走键盘」。
+>
+> **断言的是「有没有去做」，不是「做成了没有」。** 第一版拿 `isKeyWindow` 当断言，
+> 而「谁是 key」是全进程共享的一个槽、Swift Testing 的套件又是并行跑的
+> （`IslandPixelTests` 就挂真窗口）—— revert 验证时六轮里六轮都红，
+> 而它跟那六个改动一个都不相干；加了 1 秒重试也没救回来。
+> 「窗口真的成了 key、光标真的回到输入框里」只能由这一行手测看。
 
 > **13.13 想更丝滑：现在换位和松手都是硬切**（2026-08-03 用户提，未做）。
 >

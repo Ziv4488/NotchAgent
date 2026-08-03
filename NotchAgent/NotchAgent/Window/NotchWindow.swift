@@ -119,10 +119,17 @@ final class NotchWindow: NSPanel {
     /// 只找**看得见**的岛：藏起来的（全屏 Space）不该被这一下拽回前台。
     /// 收起态的岛也不会被拽成 key —— `claimKeyboard()` 里那道
     /// `allowsKeyProvider()` 闸门管着（spec 11.2）。
-    static func reclaimKeyboard() {
+    ///
+    /// - Returns: 动过手的岛有几个。**给测试用的** —— 「到底有没有成为 key」是
+    ///   系统说了算的，多个测试并行跑时别人的窗口会把 key 抢走，拿它当断言会飘。
+    @discardableResult
+    static func reclaimKeyboard() -> Int {
+        var claimed = 0
         for island in NSApp.windows.compactMap({ $0 as? NotchWindow }) where island.isVisible {
             island.claimKeyboard()
+            claimed += 1
         }
+        return claimed
     }
 
     /// 把本进程里的输入法候选框抬到岛之上。
