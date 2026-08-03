@@ -18,7 +18,17 @@ import Testing
 /// |---|---|---|
 /// | 原版 | `.onHover` + `NSCursor.push()` / `pop()` | 箭头时有时无 —— `push`/`pop` 是全局栈、要求严格配对，而手柄这棵子树按 `islandSize` 参数化，拖动时每帧重建，进和出配不上号 |
 /// | 第二版 | 手柄里塞一个 `NSViewRepresentable` 自己 `addCursorRect` | **一个箭头都不出现**。那层为了不吞点击必须 `hitTest` 返回 nil，而窗口找「该用哪个光标」要先命中到视图 —— 命不中的视图，登记的矩形没人问 |
-/// | 现在 | 手柄用 `GeometryReader` 把自己的位置报到 `model.resizeHandleFrames`，由 `NotchHostingView`（本来就可命中）登记 cursor rect | 待实测 |
+/// | 第三版 | 手柄把位置报到 `model.resizeHandleFrames`，由 `NotchHostingView`（本来就可命中）登记 cursor rect | **左右好了，下角和底边不清晰、来回几次就不显示** |
+/// | 现在 | 丢掉 cursor rect，改用 SwiftUI 的 `pointerStyle`（macOS 15+）；14 上才退回第三版那条路 | 待实测 |
+///
+/// 第三版为什么是「左右行、下面不行」，离线量出来的（探针：位置、登记、命中全对）：
+///
+/// - cursor rect **只在跨越边界那一下触发**。`SwiftTerm.TerminalView.cursorUpdate`
+///   无条件 `NSCursor.iBeam.set()`，光标一旦在框内被它改掉，就得出去再进来
+///   才回得来 —— 用户说的「来回几次就会不显示」。
+/// - 矩形登记在画布上，而终端在 z 序里压在画布**之上**。下角内探 30pt、高 20pt，
+///   和终端（离岛边 15pt、离岛底 14pt）咬掉一块；左右竖边只有 8pt 宽，
+///   够不着终端 —— 所以偏偏左右是好的。
 ///
 /// 还更正过一个诊断：先前说是 SwiftTerm 的 `addCursorRect(.iBeam)` 把箭头顶掉的。
 /// 量了不成立 —— 终端离岛边还有 15pt（卡片内缩 7 + 它自己的 padding 8），
@@ -103,25 +113,63 @@ struct ResizeCursorTests {
         #expect(abs(bottom.maxY - bodyBottom) <= 1, "底边在 \(bottom.maxY)，岛的下沿在 \(bodyBottom)")
     }
 
-    /// 每块热区要的箭头不一样，别接错线。
+    /// 每块热区在岛的哪条边上 —— **两条路的光标都从这一个映射派生**，
+    /// 所以接错线在这里就能看出来。各写一遍的话，同一块热区在 SwiftUI 那条路
+    /// 和 AppKit 那条路上会给出不同形状，看起来就是形状在抖。
+    @available(macOS 15.0, *)
+    @Test("热区认得自己在哪条边上")
+    func eachHandleKnowsItsEdge() {
+        #expect(ResizeHandles.Kind.leadingEdge.resizePosition == .leading)
+        #expect(ResizeHandles.Kind.trailingEdge.resizePosition == .trailing)
+        #expect(ResizeHandles.Kind.bottomEdge.resizePosition == .bottom)
+        #expect(ResizeHandles.Kind.bottomLeading.resizePosition == .bottomLeading)
+        #expect(ResizeHandles.Kind.bottomTrailing.resizePosition == .bottomTrailing)
+    }
+
+    /// **五块热区都得挂上 `ResizePointer`，一块都不能漏。**
+    ///
+    /// 挂没挂上是这轮修法的全部内容，可它偏偏是最难验的一步 —— 「指针移过去变成什么」
+    /// 要真的动鼠标。退而求其次：`body` 的类型里数一数。
+    /// `ModifiedContent<DragTarget, ResizePointer>` 出现五次，才是五块都挂上了。
+    ///
+    /// 这也是 `ResizePointer` 写成具名 `ViewModifier` 的原因：直接写
+    /// `@ViewBuilder` + `if #available`，15 那一支会被擦成 `AnyView`，
+    /// 类型里只剩个 `_ConditionalContent<AnyView, DragTarget>`，数不出是什么。
+    ///
+    /// 这条钉的是「挂上了」。**「挂上之后系统真的会照着画」离线证不了**，
+    /// 归手测 §8.2/8.3。
+    @Test("五块热区都挂上了 pointerStyle")
+    func everyHandleCarriesTheResizePointer() {
+        let model = IslandModel.previewModel(state: .expanded)
+        let handles = ResizeHandles(model: model, islandSize: model.size, topInset: 8)
+        let described = String(describing: type(of: handles.body))
+
+        let mounted = described.components(separatedBy: "ModifiedContent<DragTarget, ResizePointer>").count - 1
+        #expect(mounted == ResizeHandles.Kind.allCases.count,
+                "只有 \(mounted) 块热区挂上了指针样式，该是 \(ResizeHandles.Kind.allCases.count) 块")
+    }
+
+    /// 14 那条路（cursor rect）要的箭头。五块各不相同，且都不是默认箭头。
     @Test("光标接对了线")
     func eachHandleAsksForTheRightCursor() {
-        #expect(ResizeHandles.Kind.leadingEdge.cursor === NSCursor.resizeLeftRight)
-        #expect(ResizeHandles.Kind.trailingEdge.cursor === NSCursor.resizeLeftRight)
-        #expect(ResizeHandles.Kind.bottomEdge.cursor === NSCursor.resizeUpDown)
-        // 下角在 15+ 上是斜向的，14 上退回横向 —— 两种都不该是默认箭头。
-        #expect(ResizeHandles.Kind.bottomLeading.cursor !== NSCursor.arrow)
-        #expect(ResizeHandles.Kind.bottomTrailing.cursor !== NSCursor.arrow)
+        for kind in ResizeHandles.Kind.allCases {
+            #expect(kind.cursor !== NSCursor.arrow, "\(kind) 给的是默认箭头")
+        }
+        #expect(ResizeHandles.Kind.bottomEdge.cursor !== ResizeHandles.Kind.leadingEdge.cursor,
+                "底边和竖边不该是同一个光标")
         #expect(ResizeHandles.Kind.bottomLeading.cursor !== ResizeHandles.Kind.bottomEdge.cursor)
     }
 
-    /// **AppKit 自己会来问**，而且问到的是五块热区。
+    /// **两套机制不许同时开着。**
     ///
-    /// 上一版栽在这一步上：测试自己调了一遍 `resetCursorRects()` 就说「登记好了」，
-    /// 而实机上 AppKit 压根没来问过那个视图。这里不自己调 —— 挂进真窗口、
-    /// 让布局跑完，然后看窗口有没有把这活派下来。
-    @Test("AppKit 会来问这块画布要 cursor rect")
-    func appKitAsksTheHostingViewForCursorRects() async throws {
+    /// 15 起光标归 SwiftUI 的 `pointerStyle`。这时画布**一块 cursor rect 也不该登记** ——
+    /// 同一块地方两个来源抢，形状会抖，那正是用户报的「不清晰」。
+    /// 14 上反过来：没有 `pointerStyle`，五块热区必须全登记上。
+    ///
+    /// 这里不自己调 `resetCursorRects()`，挂进真窗口让窗口来派活 ——
+    /// 第二版就栽在「测试自己调了一遍就当作数」上，而实机上 AppKit 压根没问过。
+    @Test("光标只走一条路")
+    func onlyOneCursorMechanismIsLive() async throws {
         let (window, hosting, model) = await mountIsland()
         defer { window.orderOut(nil) }
 
@@ -129,6 +177,11 @@ struct ResizeCursorTests {
         window.resetCursorRects()   // 这一下是窗口派活，不是我们自己登记
         RunLoop.current.run(until: Date().addingTimeInterval(0.1))
 
+        guard ResizeHandles.usesLegacyCursorRects else {
+            #expect(hosting.added.isEmpty,
+                    "pointerStyle 那条路开着，还登记了 \(hosting.added.count) 块 cursor rect")
+            return
+        }
         #expect(hosting.added.count >= ResizeHandles.Kind.allCases.count,
                 "只登记了 \(hosting.added.count) 块，五块热区没都登记上")
         // 登记的矩形要和报上来的位置对得上，光标也要是那块热区要的那个。
@@ -137,6 +190,17 @@ struct ResizeCursorTests {
             let match = hosting.added.first { $0.rect.equalTo(frame) }
             let registered = try #require(match, "\(kind) 那块没被登记：\(frame)")
             #expect(registered.cursor === kind.cursor, "\(kind) 登记的光标不对")
+        }
+    }
+
+    /// 这台机器上到底走的是哪条路 —— 记在测试报告里，免得看到上面那条
+    /// 「一块也没登记」还以为是坏了。
+    @Test("15 起不走 cursor rect")
+    func modernSystemsSkipCursorRects() {
+        if #available(macOS 15.0, *) {
+            #expect(ResizeHandles.usesLegacyCursorRects == false)
+        } else {
+            #expect(ResizeHandles.usesLegacyCursorRects)
         }
     }
 

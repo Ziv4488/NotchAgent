@@ -42,24 +42,20 @@ class NotchHostingView: NSHostingView<IslandShell> {
         return super.hitTest(point)
     }
 
-    /// 拖拽热区的光标形状。
+    /// 拖拽热区的光标形状 —— **只在 macOS 14 上走这里**。
     ///
-    /// **登记在这儿，不是登记在手柄自己身上。** 试过在手柄那层塞一个
-    /// `NSViewRepresentable` 去 `addCursorRect`，实机是**一个箭头都不出现**：
-    /// 那层为了不吞点击（§2.2b 的旧账，拖拽层挡掉过 tab 芯片和 ✕）必须
-    /// `hitTest` 返回 nil，而窗口找「该用哪个光标」是要先命中到视图的 ——
-    /// 一个命不中的视图，它登记的矩形也就没人问。
+    /// 15 起交给 SwiftUI 的 `pointerStyle`（见 `ResizeHandles.usesLegacyCursorRects`
+    /// 上面那段：cursor rect 只在跨边界那一下触发，被终端的 `cursorUpdate` 改掉
+    /// 就回不来；而且画布在 z 序上压在终端下面，下角正好被咬掉一块）。
+    /// 两套同时开着会在同一块地方互相抢，所以是二选一。
     ///
-    /// 反过来这里天然合适：`NotchHostingView` 本来就是可命中的（命中范围正好收在
-    /// 岛的轮廓里），热区的位置由手柄各自的 `GeometryReader` 量完报到
-    /// `model.resizeHandleFrames`，和 `menuFrame` 是同一套路子 —— 位置来自真实布局，
-    /// 不用在这儿重算一遍几何。
-    ///
-    /// 不会和终端的 I 型光标打架：终端离岛边还有 15pt（卡片内缩 7 + 它自己的
-    /// padding 8），而最宽的热区（下角）也只探进来 30pt 且只在最底下 20pt，
-    /// 两者不重叠。
+    /// 14 上仍然**登记在这儿、不登记在手柄自己身上**：试过在手柄那层塞一个
+    /// `NSViewRepresentable` 去 `addCursorRect`，实机一个箭头都不出现 ——
+    /// 那层为了不吞点击（§2.2b 的旧账）必须 `hitTest` 返回 nil，
+    /// 而窗口找「该用哪个光标」要先命中到视图。这块画布本来就是可命中的。
     override func resetCursorRects() {
         super.resetCursorRects()
+        guard ResizeHandles.usesLegacyCursorRects else { return }
         for (kind, frame) in rootView.model.resizeHandleFrames where !frame.isEmpty {
             addCursorRect(frame, cursor: kind.cursor)
         }
