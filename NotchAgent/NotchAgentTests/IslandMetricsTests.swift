@@ -50,6 +50,23 @@ struct IslandMetricsTests {
         #expect(constants.runningSideBleed <= 100)
     }
 
+    /// §1.3 / §1.4：菜单栏上**能点的东西全在两端** —— 左边一排 app 菜单，
+    /// 右边一排状态项加时钟。岛长在正中间，只要它两侧离屏幕边够远，那些东西就永远点得到。
+    ///
+    /// 岛盖住的是中间那段，那儿本来什么都没有。这是 spec 3.1 认下的代价，
+    /// 不是 bug —— 这条守的是「别再往两边长到把菜单栏两端也吃掉」。
+    @Test("岛两侧都够不着菜单栏的左右两端", arguments: allGeometries)
+    func islandNeverReachesTheMenuBarEnds(name: String, geometry: FakeScreenGeometry) {
+        let metrics = IslandMetrics(geometry: geometry)
+        let screen = geometry.screenFrame.width
+        for state in IslandState.allCases {
+            let width = metrics.size(for: state).width
+            let margin = (screen - width) / 2
+            #expect(margin > 300,
+                    "\(name) 的 \(state) 态两侧只剩 \(Int(margin))pt，菜单栏两端要被盖了")
+        }
+    }
+
     @Test("running 宽度 = 基准宽 + 左右各一份 runningSideBleed")
     func runningWidth() {
         for (name, geometry) in allGeometries {
