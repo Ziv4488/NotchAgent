@@ -19,7 +19,14 @@ import Testing
 /// | 原版 | `.onHover` + `NSCursor.push()` / `pop()` | 箭头时有时无 —— `push`/`pop` 是全局栈、要求严格配对，而手柄这棵子树按 `islandSize` 参数化，拖动时每帧重建，进和出配不上号 |
 /// | 第二版 | 手柄里塞一个 `NSViewRepresentable` 自己 `addCursorRect` | **一个箭头都不出现**。那层为了不吞点击必须 `hitTest` 返回 nil，而窗口找「该用哪个光标」要先命中到视图 —— 命不中的视图，登记的矩形没人问 |
 /// | 第三版 | 手柄把位置报到 `model.resizeHandleFrames`，由 `NotchHostingView`（本来就可命中）登记 cursor rect | **左右好了，下角和底边不清晰、来回几次就不显示** |
-/// | 现在 | 丢掉 cursor rect，改用 SwiftUI 的 `pointerStyle`（macOS 15+）；14 上才退回第三版那条路 | 待实测 |
+/// | 第四版 | 丢掉 cursor rect，改用 SwiftUI 的 `pointerStyle`（macOS 15+） | **进 → 有、出 → 还有、再进 → 没了**：只在岛是 key 的时候才生效 |
+/// | 现在 | 再加一条：`.activeAlways` 的跟踪区，非 key 时由 `NotchHostingView` 在进出事件里自己设 | 待实测 |
+///
+/// **前四版全栽在同一件事上，第五版才量出来**：AppKit 的光标机制
+/// （cursor rect、`.cursorUpdate` 跟踪区、`pointerStyle`）**默认只在 key window
+/// 里生效**，而岛是 `.nonactivatingPanel`。真的把指针挪过去读
+/// `NSCursor.currentSystem`（`CursorShapeTests`），三格是这样的：
+/// active+key ✓、active+非 key ✗（第四版）、inactive ✗（**系统限制，改不了**）。
 ///
 /// 第三版为什么是「左右行、下面不行」，离线量出来的（探针：位置、登记、命中全对）：
 ///
@@ -191,6 +198,43 @@ struct ResizeCursorTests {
             let registered = try #require(match, "\(kind) 那块没被登记：\(frame)")
             #expect(registered.cursor === kind.cursor, "\(kind) 登记的光标不对")
         }
+    }
+
+    /// 非 key 那条路的跟踪区，五块热区一块不少。
+    ///
+    /// 岛多数时候不是 key window，那时 `pointerStyle` 不生效，全靠这几块跟踪区
+    /// 的进出事件把光标设上（见 `NotchHostingView.updateTrackingAreas`）。
+    @Test("五块热区都装了跟踪区")
+    func everyHandleGetsATrackingArea() async throws {
+        let (window, hosting, model) = await mountIsland()
+        defer { window.orderOut(nil) }
+
+        #expect(hosting.handleAreas.count == ResizeHandles.Kind.allCases.count,
+                "只装了 \(hosting.handleAreas.count) 块跟踪区")
+        for kind in ResizeHandles.Kind.allCases {
+            let frame = try #require(model.resizeHandleFrames[kind])
+            #expect(hosting.handleAreas.contains { $0.rect.equalTo(frame) }, "\(kind) 那块没装上")
+        }
+    }
+
+    /// **热区没挪的时候不许重装跟踪区。**
+    ///
+    /// 每次 `layout` 都重装会出一个很隐蔽的毛病：「指针正停在框里、把框撤掉」
+    /// **不产生 `mouseExited`**，再装上时指针已经在别处，也不会有 `mouseEntered`
+    /// —— 于是光标停在上一个形状上再也不还原。实测过：指针从底边挪进内容区，
+    /// 进出事件一次都不来，调整光标一路挂着出了岛，正是用户报的
+    /// 「移出岛外的时候也有箭头」。
+    @Test("热区没挪的时候不重装跟踪区")
+    func trackingAreasSurviveALayoutPass() async throws {
+        let (window, hosting, _) = await mountIsland()
+        defer { window.orderOut(nil) }
+
+        let before = hosting.handleAreas.map(ObjectIdentifier.init)
+        #expect(before.isEmpty == false)
+        hosting.layout()
+        hosting.updateTrackingAreas()
+        #expect(hosting.handleAreas.map(ObjectIdentifier.init) == before,
+                "热区一点没挪，跟踪区却被重装了 —— 这一下会吃掉 mouseExited")
     }
 
     /// 这台机器上到底走的是哪条路 —— 记在测试报告里，免得看到上面那条

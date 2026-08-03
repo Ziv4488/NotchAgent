@@ -165,23 +165,26 @@ struct ResizeHandles: View {
         }
     }
 
-    /// 还要不要 AppKit 那条 cursor rect。**15 起一律不要，两套只留一套。**
+    /// 还要不要 AppKit 那条 cursor rect。**15 起不要 —— 那一格归 `pointerStyle`。**
     ///
-    /// 前三版都栽在 cursor rect 上，第三版（画布统一登记）实机的结果是
-    /// 「左右好了，下角和底边不清晰、来回几次就不显示」。离线量过：五块热区的
-    /// 位置、登记、命中全都是对的，问题在登记**之后**——
+    /// 光标这件事在岛上要分两格，因为岛是 `.nonactivatingPanel`：
     ///
-    /// - cursor rect 只在**跨越边界那一下**触发。谁在指针已经停在框里的时候
-    ///   把光标改掉（`SwiftTerm.TerminalView.cursorUpdate` 就无条件
-    ///   `NSCursor.iBeam.set()`），就得出去再进来才回得来，正是「来回几次就没了」。
-    /// - 登记在画布上，而终端在 z 序里压在画布**之上**。下角内探 30pt、
-    ///   高 20pt，和终端（离岛边 15pt、离岛底 14pt）正好咬掉一块；
-    ///   左右竖边只有 8pt 宽，够不着终端 —— 所以偏偏左右是好的。
+    /// | 岛的状态 | 谁在管 |
+    /// |---|---|
+    /// | 是 key | `pointerStyle`（14 上没这个 API，退回 cursor rect） |
+    /// | 不是 key | `NotchHostingView` 的 `.activeAlways` 跟踪区 |
     ///
-    /// `pointerStyle` 两条都不沾：声明式、没有进出配对，按 SwiftUI 的 z 序算，
-    /// 而拖拽层是加在最上面的 `.overlay`，压得住终端。
+    /// **AppKit 的光标机制默认只在 key window 里生效**，这是前四版全栽了的根因
+    /// （实测：非 key 时热区上读到的一律是普通箭头，`cursorUpdate` 一次都不来）。
+    /// 这一格只能靠 `.activeAlways` 的跟踪区自己设，见
+    /// `NotchHostingView.updateTrackingAreas()`。
     ///
-    /// 两套同时开着更糟（同一块地方两个来源抢，形状会抖），所以这里是二选一。
+    /// cursor rect 这条则是被 `pointerStyle` 顶掉的：它只在**跨越边界那一下**触发，
+    /// 指针停在框里被别人改掉（`SwiftTerm.TerminalView.cursorUpdate` 就无条件
+    /// `NSCursor.iBeam.set()`）就回不来；而且登记在画布上，终端在 z 序里压在画布
+    /// 之上，下角正好被咬掉一块。`pointerStyle` 两条都不沾。
+    ///
+    /// 15 上不再同时开 cursor rect：同一块地方两个来源抢，形状会抖。
     static var usesLegacyCursorRects: Bool {
         if #available(macOS 15.0, *) { return false }
         return true

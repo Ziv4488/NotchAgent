@@ -61,10 +61,85 @@ class NotchHostingView: NSHostingView<IslandShell> {
         }
     }
 
+    // MARK: - 非 key 状态下的光标
+
+    /// 已经装上去的热区。**只有真的挪了才重装。**
+    ///
+    /// 每次 `layout` 都重装是不行的：「指针正停在框里、把框撤掉」**不会产生
+    /// `mouseExited`**，再装上时指针已经在别处，也不会有 `mouseEntered` ——
+    /// 于是光标停在上一个形状上再也不还原。实测：指针从底边挪进内容区，
+    /// 进出事件一次都不来，调整光标一路挂着出了岛（用户报的
+    /// 「移出岛外的时候也有箭头」）。
+    private var installedHandleFrames: [ResizeHandles.Kind: CGRect] = [:]
+    /// 内部可见：`ResizeCursorTests` 要数「装了几块」「有没有被反复重装」。
+    private(set) var handleAreas: [NSTrackingArea] = []
+    /// 现在挂着的是不是我们设的那个 —— 只收自己放出去的，别去动终端的 I 型光标。
+    private var showingResizeCursor = false
+
+    /// 用 `.activeAlways` 的跟踪区，**因为岛多数时候不是 key window**。
+    ///
+    /// 这是前四版都栽了的根因。AppKit 的光标区（cursor rect、`.cursorUpdate`
+    /// 跟踪区、SwiftUI 的 `pointerStyle`）默认只在 **key window** 里生效，
+    /// 而岛是 `.nonactivatingPanel`，`canBecomeKey` 只在展开态为真、
+    /// 还得用户点过它才成立。实测（把指针挪到八个位置读 `NSCursor.currentSystem`）：
+    ///
+    /// - 非 key：八个点**全是普通箭头**，热区上也一样；`cursorUpdate` 一次都不来。
+    /// - key：八个点全对。
+    ///
+    /// 而 `.mouseEnteredAndExited` + `.activeAlways` 在非 key 下**照常送达**，
+    /// 所以光标改在进出事件里自己设。
+    ///
+    /// **`.activeAlways` 这个标志测不出来**，说在前面：把它去掉，
+    /// `CursorShapeTests` 照样绿 —— 两个用例里 app 都是 active 的，
+    /// 而「app 不 active」那一格系统根本不给改光标（量过），所以在可测的范围内
+    /// 它不承重。留着是因为它更贴意图，且哪天系统放开了就能用上。
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        let frames = rootView.model.resizeHandleFrames.filter { !$0.value.isEmpty }
+        guard frames != installedHandleFrames else { return }
+
+        for area in handleAreas { removeTrackingArea(area) }
+        handleAreas = frames.values.map {
+            NSTrackingArea(rect: $0, options: [.activeAlways, .mouseEnteredAndExited],
+                           owner: self, userInfo: nil)
+        }
+        for area in handleAreas { addTrackingArea(area) }
+        installedHandleFrames = frames
+        // 刚换过一批框，指针此刻在哪儿得重新算一次 —— 重装本身不产生进出事件。
+        refreshCursor()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        refreshCursor()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        refreshCursor()
+    }
+
+    /// 按指针**此刻**的位置定形状。
+    ///
+    /// 不用事件里带的坐标：`mouseExited` 给的是「离开时那一点」，常常还压在框的边上，
+    /// 拿它判断会得出「还在框里」，于是永远不还原。
+    private func refreshCursor() {
+        guard let window else { return }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        if let kind = rootView.model.resizeHandleFrames.first(where: { $0.value.contains(point) })?.key {
+            kind.cursor.set()
+            showingResizeCursor = true
+        } else if showingResizeCursor {
+            NSCursor.arrow.set()
+            showingResizeCursor = false
+        }
+    }
+
     /// 岛一变形热区就挪位置，登记过的矩形当场过期。
     override func layout() {
         super.layout()
         window?.invalidateCursorRects(for: self)
+        updateTrackingAreas()
     }
 
     /// 选项浮层占的那块。没有浮层时是空矩形，`contains` 恒为假。
