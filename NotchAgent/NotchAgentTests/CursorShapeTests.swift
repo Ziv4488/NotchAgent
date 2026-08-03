@@ -46,7 +46,71 @@ struct CursorShapeTests {
         try await walkTheEdges(makeKey: true)
     }
 
+    /// **一步一步穿过热区**，每一步都读一次形状。
+    ///
+    /// 这条是看用户录屏补上的，也是上面那两条测不出来的那半件事：它们只读
+    /// 「刚落到热区那一下」，而实机上正确的形状**只活了那一下**。
+    /// 录屏（120fps）量得清清楚楚：指针从岛外进右下角，第 7.8 秒是斜向箭头，
+    /// 7.9 秒起整整一秒全是普通箭头，指针一直在热区里没出去；
+    /// 从岛内往下走进热区则一路都对。用户报的「一瞬间就消失」「来回几次就不显示」
+    /// 是同一件事 —— 进热区之后**再动一下**就被打回箭头，而不会有第二个
+    /// `mouseEntered` 来救。
+    ///
+    /// 所以这条必须逐点走、逐点读，且**两个方向都走**。
+    @Test("一步步穿过底边热区，中途不能掉回箭头")
+    func cursorHoldsWhileCrossing() async throws {
+        try await crossTheZone(makeKey: false)
+    }
+
+    @Test("岛是 key 的时候也一样（一步步穿过去）")
+    func cursorHoldsWhileCrossingWhenKey() async throws {
+        try await crossTheZone(makeKey: true)
+    }
+
     // MARK: -
+
+    private func crossTheZone(makeKey: Bool) async throws {
+        guard AXIsProcessTrusted() else { return }
+
+        let origin = NSEvent.mouseLocation
+        defer { warp(toScreenPoint: origin) }
+
+        let (window, model, frame) = try mount(makeKey: makeKey)
+        defer { window.orderOut(nil) }
+        await settle(0.5)
+
+        guard NSApp.isActive, window.isKeyWindow == makeKey else { return }   // 环境不对，宁可跳过
+
+        let bottom = try #require(model.resizeHandleFrames[.bottomEdge], "底边热区没报位置")
+        let expected = ResizeHandles.Kind.bottomEdge.cursor
+
+        // 从岛内 → 穿过热区 → 岛外，再原路走回来。每次 4pt，跟真手差不多。
+        var route: [CGFloat] = []
+        var y = bottom.minY - 20
+        while y <= bottom.maxY + 20 { route.append(y); y += 4 }
+        route += route.reversed()
+
+        for y in route {
+            let point = CGPoint(x: bottom.midX, y: y)
+            await warpTo(point, frame)
+            await settle(0.06)
+
+            let target = screenPoint(point, frame)
+            let landed = NSEvent.mouseLocation
+            guard abs(landed.x - target.x) < 2, abs(landed.y - target.y) < 2,
+                  NSApp.isActive, window.isKeyWindow == makeKey else { continue }
+            guard let actual = NSCursor.currentSystem else { continue }
+
+            let isResize = actual.image.size == expected.image.size && actual.hotSpot == expected.hotSpot
+            if bottom.contains(point) {
+                let complaint = "y=\(y) 在底边热区里，光标却是 \(actual.image.size)/\(actual.hotSpot)"
+                #expect(isResize, Comment(rawValue: complaint))
+            } else if y > bottom.maxY + 8 {
+                // 出了岛还挂着调整光标 —— 用户报过的「移出岛外的时候也有箭头」。
+                #expect(!isResize, Comment(rawValue: "y=\(y) 已经出了岛，光标还是上下箭头"))
+            }
+        }
+    }
 
     private func walkTheEdges(makeKey: Bool) async throws {
         guard AXIsProcessTrusted() else { return }   // 没权限，发的事件不作数
@@ -54,35 +118,9 @@ struct CursorShapeTests {
         let origin = NSEvent.mouseLocation
         defer { warp(toScreenPoint: origin) }
 
-        let model = IslandModel.previewModel(state: .expanded)
-        let canvas = CGSize(width: model.size.width + 200, height: model.size.height + 100)
-        let screen = try #require(NSScreen.main)
-        // 摆在屏幕正中，别贴屏幕上沿 —— 那儿有真的岛。
-        let frame = CGRect(x: screen.frame.midX - canvas.width / 2,
-                           y: screen.frame.midY - canvas.height / 2,
-                           width: canvas.width, height: canvas.height)
-
-        // borderless 的窗口当不了 key，正好用来造「岛不是 key」那一半。
-        let window = NSWindow(contentRect: frame,
-                              styleMask: makeKey ? [.titled] : [.borderless],
-                              backing: .buffered, defer: false)
-        window.level = .floating
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        let hosting = NotchHostingView(rootView: IslandShell(model: model))
-        hosting.islandGeometry = { (model.size, model.cornerRadii) }
-        hosting.frame = CGRect(origin: .zero, size: canvas)
-        window.contentView = hosting
-        window.orderFrontRegardless()
-        // **两个用例都要 app 在前台。** 后台 app 根本改不动指针（背景窗口的内容区
-        // 一律显示普通箭头，这是系统行为，不是我们的 bug）—— 量过：把前台让给
-        // Finder，热区上读到的就是普通箭头，两条机制都不管用。
-        // 区别只在窗口是不是 key：borderless 的窗口当不了 key，正好用来造那一半。
-        NSApp.activate(ignoringOtherApps: true)
-        if makeKey { window.makeKeyAndOrderFront(nil) }
-        hosting.layoutSubtreeIfNeeded()
-        await settle(0.4)
+        let (window, model, frame) = try mount(makeKey: makeKey)
         defer { window.orderOut(nil) }
+        await settle(0.4)
 
 
         let bottom = try #require(model.resizeHandleFrames[.bottomEdge], "底边热区没报位置")
@@ -104,6 +142,50 @@ struct CursorShapeTests {
                                at: CGPoint(x: corner.midX, y: corner.midY), "左下角", window, frame, makeKey: makeKey)
         try await expectCursor(ResizeHandles.Kind.leadingEdge.cursor,
                                at: CGPoint(x: leading.midX, y: leading.midY), "左竖边", window, frame, makeKey: makeKey)
+    }
+
+    /// 摆一个装着岛的窗口出来。
+    ///
+    /// **用真的 `NotchWindow`**，不用随手造的 `NSWindow`：光标这件事上，
+    /// 「非激活面板」和普通窗口不是一回事，拿普通窗口测出来的绿是假的
+    /// —— 上一版就是这么放过去的（那条测试在真机坏掉的情况下照样绿）。
+    /// 是不是 key 由 `allowsKeyProvider` 决定，和生产里一模一样（spec 11.2）。
+    ///
+    /// **两种用例都要 app 在前台。** 后台 app 根本改不动指针（背景窗口的内容区
+    /// 一律显示普通箭头，这是系统行为，不是我们的 bug）—— 量过：把前台让给
+    /// Finder，热区上读到的就是普通箭头，三套机制都不管用。
+    private func mount(makeKey: Bool) throws -> (NotchWindow, IslandModel, CGRect) {
+        let model = IslandModel.previewModel(state: .expanded)
+        let canvas = CGSize(width: model.size.width + 200, height: model.size.height + 100)
+        let screen = try #require(NSScreen.main)
+        // 摆在屏幕正中，别贴屏幕上沿 —— 那儿有真的岛。
+        let frame = CGRect(x: screen.frame.midX - canvas.width / 2,
+                           y: screen.frame.midY - canvas.height / 2,
+                           width: canvas.width, height: canvas.height)
+
+        let hosting = NotchHostingView(rootView: IslandShell(model: model))
+        hosting.islandGeometry = { (model.size, model.cornerRadii) }
+        hosting.frame = CGRect(origin: .zero, size: canvas)
+        let window = NotchWindow(contentView: hosting)
+        window.allowsKeyProvider = { makeKey }
+        window.setFrame(frame, display: true)
+        window.orderFrontRegardless()
+        NSApp.activate(ignoringOtherApps: true)
+        if makeKey { window.makeKeyAndOrderFront(nil) }   // 用户点过岛
+        hosting.layoutSubtreeIfNeeded()
+        return (window, model, frame)
+    }
+
+    /// 画布坐标（y 朝下、原点在画布左上）→ 屏幕坐标（y 朝上，AppKit 那套）。
+    private func screenPoint(_ point: CGPoint, _ frame: CGRect) -> CGPoint {
+        CGPoint(x: frame.minX + point.x, y: frame.maxY - point.y)
+    }
+
+    /// 把指针挪到画布里的某一点（不先挪开 —— 这条路线本身就要连贯）。
+    private func warpTo(_ point: CGPoint, _ frame: CGRect) async {
+        let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
+        let target = screenPoint(point, frame)
+        await move(to: CGPoint(x: target.x, y: screenTop - target.y), from: screenTop)
     }
 
     /// 把指针挪到画布里的某一点，断言系统显示的是哪个光标。

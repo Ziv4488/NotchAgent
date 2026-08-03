@@ -75,24 +75,34 @@ class NotchHostingView: NSHostingView<IslandShell> {
     private(set) var handleAreas: [NSTrackingArea] = []
     /// 现在挂着的是不是我们设的那个 —— 只收自己放出去的，别去动终端的 I 型光标。
     private var showingResizeCursor = false
+    /// 鼠标移动的监视器（见 `watchMouseMoves`）。
+    private var moveMonitor: Any?
 
-    /// 用 `.activeAlways` 的跟踪区，**因为岛多数时候不是 key window**。
+    /// 光标要自己设，**因为岛多数时候不是 key window**。
     ///
-    /// 这是前四版都栽了的根因。AppKit 的光标区（cursor rect、`.cursorUpdate`
-    /// 跟踪区、SwiftUI 的 `pointerStyle`）默认只在 **key window** 里生效，
+    /// 这是前几版都栽了的根因。AppKit 的三套光标机制（cursor rect、`.cursorUpdate`
+    /// 跟踪区、SwiftUI 的 `pointerStyle`）默认**只在 key window 里生效**，
     /// 而岛是 `.nonactivatingPanel`，`canBecomeKey` 只在展开态为真、
-    /// 还得用户点过它才成立。实测（把指针挪到八个位置读 `NSCursor.currentSystem`）：
+    /// 还得用户点过它才成立。挪着真指针读 `NSCursor.currentSystem` 量出来的三格：
     ///
-    /// - 非 key：八个点**全是普通箭头**，热区上也一样；`cursorUpdate` 一次都不来。
-    /// - key：八个点全对。
+    /// | app | 窗口 | 热区上的光标 |
+    /// |---|---|---|
+    /// | 前台 | key | 对（`pointerStyle` 管着） |
+    /// | 前台 | 非 key | 三套全不生效，只能自己设 —— 就是这儿 |
+    /// | 后台 | — | **改不了**，系统只给普通箭头 |
     ///
-    /// 而 `.mouseEnteredAndExited` + `.activeAlways` 在非 key 下**照常送达**，
-    /// 所以光标改在进出事件里自己设。
+    /// 靠 `mouseEntered` 一个人是不够的 —— 这是看用户录屏才发现的：进热区那一下
+    /// 我们设对了，**指针还在热区里继续动，光标就被改回了普通箭头**，
+    /// 而不会再有第二个 `mouseEntered`，于是那一整趟都是错的。
+    /// 录屏（120fps）里量得清清楚楚：从岛外进右下角，第 7.8 秒是斜向箭头，
+    /// 7.9 秒起整整一秒全是普通箭头，指针一直在热区里没出去；
+    /// 反方向（从岛内往下走进热区）则一路都对 —— 用户说的「一瞬间就消失」
+    /// 和「来回几次就不显示」是同一件事。所以**每次鼠标移动都得重设一遍**。
     ///
-    /// **`.activeAlways` 这个标志测不出来**，说在前面：把它去掉，
-    /// `CursorShapeTests` 照样绿 —— 两个用例里 app 都是 active 的，
-    /// 而「app 不 active」那一格系统根本不给改光标（量过），所以在可测的范围内
-    /// 它不承重。留着是因为它更贴意图，且哪天系统放开了就能用上。
+    /// **移动事件不能靠跟踪区的 `.mouseMoved` 拿**：macOS 26 上那个标志会让
+    /// WindowServer 凭空合成 left-mouse-down（SwiftTerm 为此专门绕了一道，见
+    /// `MacTerminalView.startTracking`），落在热区上就是「鼠标扫过去岛自己开始
+    /// 缩放」。改用它那套办法：跟踪区只负责进出，移动走窗口级的本地事件监视器。
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         let frames = rootView.model.resizeHandleFrames.filter { !$0.value.isEmpty }
@@ -106,17 +116,52 @@ class NotchHostingView: NSHostingView<IslandShell> {
         for area in handleAreas { addTrackingArea(area) }
         installedHandleFrames = frames
         // 刚换过一批框，指针此刻在哪儿得重新算一次 —— 重装本身不产生进出事件。
+        watchMouseMoves()
         refreshCursor()
     }
 
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
+        watchMouseMoves()   // SwiftTerm 收工时会把 acceptsMouseMovedEvents 关回去
         refreshCursor()
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         refreshCursor()
+    }
+
+    /// 每次鼠标移动都把光标重设一遍 —— 不然进热区之后第一次移动就被打回箭头。
+    ///
+    /// `acceptsMouseMovedEvents` 是窗口级开关，终端那边也在用（它自己也会开，
+    /// 收工时按开之前的值还原 —— 所以我们要在进热区时补设一次，别被它关掉）。
+    /// 开着不会让终端多报什么：`TerminalView.mouseMoved` 自己会检查
+    /// `terminal.mouseMode.sendMotionEvent()`，TUI 没要就不发。
+    private func watchMouseMoves() {
+        window?.acceptsMouseMovedEvents = true
+        guard moveMonitor == nil else { return }
+        moveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+            // **不按 `event.window` 过滤。** 屏幕上不止一个岛时（每屏一个），
+            // 同一个位置的移动事件会被派给另一块岛的窗口 —— 按窗口筛就漏掉了，
+            // 于是指针还在热区里、光标却再没人管（量过：漏掉的那几步全是普通箭头）。
+            // 反正 `refreshCursor` 自己按本窗口的指针位置判断，不属于自己的它不碰。
+            self?.refreshCursor()
+            return event   // 绝不吞：终端和别的跟踪区还要收
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            if let moveMonitor { NSEvent.removeMonitor(moveMonitor) }
+            moveMonitor = nil
+        } else {
+            watchMouseMoves()
+        }
+    }
+
+    deinit {
+        if let moveMonitor { NSEvent.removeMonitor(moveMonitor) }
     }
 
     /// 按指针**此刻**的位置定形状。
