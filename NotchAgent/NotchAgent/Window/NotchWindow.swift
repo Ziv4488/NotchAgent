@@ -109,6 +109,22 @@ final class NotchWindow: NSPanel {
         return body()
     }
 
+    /// 模态框收掉之后，把键盘拿回岛上。
+    ///
+    /// **`steppingAside` 只还原 `level`，不管键盘。** 模态期间 key 归模态框，
+    /// 结束后 AppKit 把 key 还给它自己记着的那个窗口 —— 不一定是岛。窗口不是 key
+    /// 的话，SwiftUI 那边 `@FocusState` 设成 true 也不会有光标：用户报的
+    /// 「选完目录光标丢了」（§13.9）就是这么来的。
+    ///
+    /// 只找**看得见**的岛：藏起来的（全屏 Space）不该被这一下拽回前台。
+    /// 收起态的岛也不会被拽成 key —— `claimKeyboard()` 里那道
+    /// `allowsKeyProvider()` 闸门管着（spec 11.2）。
+    static func reclaimKeyboard() {
+        for island in NSApp.windows.compactMap({ $0 as? NotchWindow }) where island.isVisible {
+            island.claimKeyboard()
+        }
+    }
+
     /// 把本进程里的输入法候选框抬到岛之上。
     func raiseInputMethodWindows() {
         guard allowsKeyProvider() else { return }

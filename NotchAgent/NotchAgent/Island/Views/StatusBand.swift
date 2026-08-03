@@ -23,6 +23,11 @@ struct StatusBand: View {
     /// 代价是内容超宽只能截断，但截断本来就是对的。
     private var sideWidth: CGFloat { Self.sideWidth(totalWidth: totalWidth, notchGap: notchGap) }
 
+    enum Layout {
+        /// ✕ 离岛右沿留多少。见下面用它的地方。
+        static let closeTrailingInset: CGFloat = 8
+    }
+
     static func sideWidth(totalWidth: CGFloat, notchGap: CGFloat) -> CGFloat {
         max(0, (totalWidth - notchGap) / 2)
     }
@@ -107,7 +112,9 @@ struct StatusBand: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.trailing, 8)
+            // 这个数是 `ResizeHandles.Layout.edgeThickness` 的上限：竖边手柄
+            // 就贴在这条边上，比它宽就会压住 ✕（§2.2b 踩过一次）。
+            .padding(.trailing, Layout.closeTrailingInset)
         }
     }
 

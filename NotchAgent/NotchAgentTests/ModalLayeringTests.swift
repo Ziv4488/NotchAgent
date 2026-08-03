@@ -50,6 +50,53 @@ struct ModalLayeringTests {
         #expect(island.level == before)
     }
 
+    /// **`steppingAside` 只还原层级，不还键盘。**
+    ///
+    /// 用户报的 §13.9「选完目录光标丢了」有一半在这儿：模态期间 key 归模态框，
+    /// 结束后 AppKit 把 key 还给它自己记着的那个窗口 —— 不一定是岛。
+    /// 窗口不是 key 的话，SwiftUI 那边 `@FocusState` 设成 true 也不会有光标。
+    /// 这条钉住「让位这件事本身管不到键盘」，也就是 `reclaimKeyboard()` 存在的理由。
+    @Test("让位不负责把键盘还回来")
+    func steppingAsideDoesNotTouchTheKeyboard() {
+        let island = makeIsland()
+        island.allowsKeyProvider = { true }
+        var becameKeyDuringModal: Bool?
+        NotchWindow.steppingAside { becameKeyDuringModal = island.isKeyWindow }
+        #expect(becameKeyDuringModal == false, "让位期间岛不该是 key")
+        #expect(island.isKeyWindow == false, "让位结束后也没人替它把键盘拿回来")
+    }
+
+    /// 展开态（`allowsKeyProvider` 为真）时，`reclaimKeyboard()` 要真的把岛变成 key。
+    ///
+    /// 这是 §13.9 的修法：模态框收掉之后先把键盘拿回来，再设 `@FocusState`。
+    @Test("reclaimKeyboard 把看得见的岛重新变成 key")
+    func reclaimKeyboardMakesTheIslandKeyAgain() {
+        let island = makeIsland()
+        island.allowsKeyProvider = { true }
+        island.orderFront(nil)
+        #expect(island.isKeyWindow == false)
+
+        NotchWindow.reclaimKeyboard()
+        #expect(island.isKeyWindow, "岛没被拿回键盘 —— 光标不会回到输入框里")
+        island.orderOut(nil)
+    }
+
+    /// **收起态的岛不许被这一下拽成 key。**
+    ///
+    /// `canBecomeKey` 只在展开态为真（spec 11.2）。`reclaimKeyboard` 是无差别地
+    /// 对所有看得见的岛调用的，它必须尊重那条闸门 —— 否则 idle 的岛会在
+    /// 用户于别处打字时把键盘抢走。
+    @Test("收起态的岛不会被 reclaimKeyboard 抢走键盘")
+    func reclaimKeyboardRespectsTheCollapsedGate() {
+        let island = makeIsland()
+        island.allowsKeyProvider = { false }
+        island.orderFront(nil)
+
+        NotchWindow.reclaimKeyboard()
+        #expect(island.isKeyWindow == false)
+        island.orderOut(nil)
+    }
+
     /// 模态框里抛出去也得还 —— `defer` 保证的就是这个。
     @Test("模态期间出错也要还回去")
     func restoresLevelOnThrow() {

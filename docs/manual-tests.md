@@ -163,8 +163,8 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | # | 操作 | 期望 |
 |---|---|---|
 | ~~8.1~~ | ~~展开后看边缘~~ | **已自动化**：`IslandPixelTests`「拖拽手柄只在底边中央露一条，两个下角什么都没有」。手柄的**命中区**照旧在下角（那不画东西），这条只管画面 |
-| 8.2 | 鼠标扫过**左右两条竖边** | 光标变左右箭头。这里必须有反应 —— 调整窗口的直觉就是抓侧边。**⚠️ 2026-08-03 实测不合格**：用户原话「出现箭头的时机和位置不稳定，好暧昧」。见下面那段 |
-| 8.3 | 鼠标移到底边中段 / 两个下角 | 分别变上下箭头 / 斜向箭头（macOS 15+）。**移开后光标必须变回来**，卡住不还原是 bug。**⚠️ 2026-08-03 同 8.2** |
+| 8.2 | 鼠标扫过**左右两条竖边** | 光标变左右箭头。这里必须有反应 —— 调整窗口的直觉就是抓侧边。**2026-08-03 实测不合格 → 当天改了三处**（cursor rect、上沿让位 32→8、热区 6→8），见下面那段。**请再测一次** |
+| 8.3 | 鼠标移到底边中段 / 两个下角 | 分别变上下箭头 / 斜向箭头（macOS 15+）。**移开后光标必须变回来**，卡住不还原是 bug。**2026-08-03 同 8.2，已改，请再测一次** |
 | 8.4 | 拖左侧竖边往左 | 岛左右**对称**变宽，高度不变 |
 | 8.5 | 拖底边中段往下 | 只有内容区变高，tab 条 / 输入框高度不变 |
 | ~~8.5b~~ | ~~会话从「在跑」变成「已结束」~~ | **已自动化**：`IslandMetricsTests`「会话结束时岛的总高度不变 —— 输入框那 44pt 由内容区吸收」。（写这条时踩了一脚：原本用 `previewState(.expanded)` 进展开态，而它会**再造一个在跑的会话** —— 于是「把这个会话结束掉」之后仍有别的在跑，要测的变化根本没发生，故意打断它也不红。改成 `send(.click)`） |
@@ -176,26 +176,23 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | 8.11 | **升级到 2026-08-02 之后那一版**，展开一次 | 岛的高度**和升级前一模一样**。内容区高度的口径这一版变了（用量条拆掉后留在 chrome 里的 22pt 挪回了内容区），`UserDefaults` 里存过的数是旧口径的，读的时候补一次（`Preferences.usageBarReclaim`）。补漏了的话岛会当场矮 22pt —— 用户什么都没动，岛却变了 |
 | 8.12 | 再拖一次尺寸，重启 app | 高度**不会再多 22pt**。迁移只做一次，做完记标记；每次读都加的话岛会一次比一次高 |
 
-> **8.2 / 8.3「箭头出现的时机和位置不稳定」是两套光标机制在打架**（2026-08-03 用户实测，未修）。
+> **8.2 / 8.3「箭头出现的时机和位置不稳定」** —— 2026-08-03 用户实测报的，当天改了三处，
+> **还要你再摸一次才算过**（光标形状这件事，离线测不了「谁赢」，得手真的挪过去）。
 >
-> 手柄用的是 SwiftUI 的 `.onHover` + `NSCursor.push()` / `pop()`
-> （`ResizeHandles.DragTarget`）。而 SwiftTerm 的 `MacTerminalView` 走的是 AppKit 那套：
-> `addCursorRect(bounds, cursor: .iBeam)`，外加重写 `cursorUpdate(with:)` 直接
-> `NSCursor.iBeam.set()`。
+> 先更正一句我自己写错的话。第一版诊断写的是「SwiftTerm 的
+> `addCursorRect(bounds, cursor: .iBeam)` 把箭头顶掉了」。**量了一下不成立**：
+> 终端离岛边还有 15pt（卡片内缩 7 + 终端自己的 padding 8），而手柄只占最外面 8pt，
+> 两者根本不重叠。站得住的是下面这三条：
 >
-> `.set()` 只换「当前光标」，**不动 push 出来的那个栈**。于是手从终端挪到边条上，
-> `.onHover` 触发一次 push、箭头出现；但只要 AppKit 再发一次 `cursorUpdate`
-> （鼠标在终端的 tracking area 里动一下、窗口重新变 key、布局变化，都会），
-> I 型光标就把箭头顶掉 —— 而 `.onHover` 只有进/出两个时刻，不会再触发第二次。
-> 反过来离开边条时 `pop()` 弹掉的可能是别人设的那一档，栈还会越弹越乱。
+> | 改了什么 | 为什么 |
+> |---|---|
+> | `.onHover` + `NSCursor.push()/pop()` → 真正的 cursor rect | `push`/`pop` 动的是**全局栈**、要求严格配对，而手柄这棵子树是按 `islandSize` 参数化的，拖动时每帧都在重建，进和出配不上号（原来那个 `onDisappear` 里补的 `pop()` 就是为这个加的，但补不全）。栈一歪，箭头要么不出现，要么离开了还卡着。cursor rect 是 AppKit 每次鼠标移动重新解析的，天然幂等 |
+> | 竖边上沿的让位 32pt → 8pt | 原来让开的是整条状态带的高度，于是**竖边上面一大截根本没有手柄**，扫过去当然没反应。真正需要让开的只有内凹圆弧那一段（`cornerRadii.inverted`，8pt），再往下岛的两侧就是笔直的了 |
+> | 热区 6pt → 8pt | 6pt 太细，摸不着。**上限就是 8** —— 竖边贴在状态带最右边，收起用的 ✕ 只留了 8pt 右边距，再宽就压到 ✕ 上（§2.2b 那个「点了没反应」会重演）。这条由 `ResizeCursorTests`「竖边的热区不会压到 ✕ 上」钉着 |
 >
-> 所以这不是「热区太小」。SwiftUI 的进/出回调赢不了 AppKit 每次鼠标移动都重设的
-> cursor rect。**修法**：给手柄也注册真正的 cursor rect（一个极薄的
-> `NSViewRepresentable`，在 `resetCursorRects` 里 `addCursorRect`）——
-> AppKit 按视图层序解析，手柄压在终端之上就稳定赢，也不用再操心 push/pop 配对。
->
-> 还有一处会加重「位置暧昧」：竖边手柄有 `.padding(.top, topInset)`，
-> 也就是**顶上菜单栏那 32pt 是没有手柄的**，扫过去当然没反应。
+> 能自动测的部分在 `ResizeCursorTests`：矩形盖满整块手柄、要哪个光标登记哪个、
+> **这一层一个点击都不吃**（§2.2b 的教训）、热区不越界。
+> 「手挪过去箭头稳不稳定」只能你来看。
 
 > 尺寸存在 `UserDefaults`，重启后恢复（第 12.4 条）。
 
@@ -337,7 +334,7 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | 13.7 | 收起态（notice）双击 tab | **不进编辑态**。那时岛宽是按标题量出来的，边改边量整块岛会抽 |
 | ~~13.8~~ | ~~新建表单里点「选择其他目录…」~~ | **2026-08-03 实测通过。** 系统文件选择框完整浮在岛之上 |
 | ~~13.8b~~ | ~~关掉选择框之后~~ | **2026-08-03 实测通过。** 岛回到菜单栏之上 |
-| 13.9 | 在选择框里选一个目录 | 目录被选中，回到表单，光标回到指令输入框。**⚠️ 2026-08-03 实测不合格**：目录选上了，但**光标丢了**，没回到指令输入框。见下面那段 |
+| 13.9 | 在选择框里选一个目录 | 目录被选中，回到表单，光标回到指令输入框。**2026-08-03 实测不合格 → 当天已改**（抢两次焦点 + `reclaimKeyboard`），见下面那段。**请再测一次** |
 | 13.10 | 在几个 tab 之间来回单击 | **当场就切**，没有可以察觉的停顿 |
 | 13.11 | 鼠标停在一个 tab 上 | 右边露出一个 ✕（选中的那个常驻）。**tab 宽度不许因此变化** |
 | 13.12 | 点那个 ✕（会话**已经结束**的 tab） | tab 直接消失，不弹框；关掉最后一个时岛落回 idle。**判定逻辑已自动化**（`CloseTabConfirmTests`「已经结束的 tab 不问，直接关」+ `IslandModelTests`「关掉最后一个 tab 后岛回到 idle」），手测只剩「点上去真的有反应」 |
@@ -351,19 +348,22 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | ~~13.19~~ | ~~tab 少时横扫不橡皮筋~~ | **已自动化**：同套「tab 少的时候没有可滚的余量」 |
 | ~~13.20~~ | ~~tab 溢出的状态下，按住一个 tab 往左右拖~~ | **2026-08-03 用户决定不测**（13.13–13.15 已经覆盖了拖拽本身，溢出只是多一层滚动）。换位照常（macOS 的横向滚动走两指横扫，和拖拽不是同一件事，两者共存）。**这条还得手测** —— 拖拽换位要真的按住鼠标走一段，合成事件重现不了那条 `DragGesture` |
 
-> **13.9「光标丢了」：抢焦点只抢了一次**（2026-08-03 用户实测，未修）。
+> **13.9「光标丢了」：抢焦点只抢了一次**（2026-08-03 报，当天已改）。
 >
-> `NewTaskForm.chooseDirectory()` 在 `panel.runModal()` 返回之后写了一句
-> `instructionFocused = true`，就这一次、还在同一个 runloop 回合里。
-> 而模态会话结束后 AppKit 会**在这次调用返回之后**把它记着的 first responder 恢复回去，
-> 正好把刚设的焦点顶掉。
+> `NewTaskForm.chooseDirectory()` 在 `panel.runModal()` 返回之后只写了一句
+> `instructionFocused = true`，还在同一个 runloop 回合里。而模态会话结束后 AppKit 会
+> **在这次调用返回之后**把它记着的 first responder 恢复回去，正好把刚设的焦点顶掉。
+> 同一个坑这个文件里已经踩过一次、也写了注释（`onAppear` 是抢两次，
+> `InputBar.claimFocus()` 也是），只有 `chooseDirectory()` 没跟上。
 >
-> 同一个坑这个文件里已经踩过一次、也写了注释：`onAppear` 里是
-> `instructionFocused = true` 加一句 `Task { @MainActor in instructionFocused = true }`
-> —— 抢两次。`InputBar.claimFocus()` 也是这么写的。**只有 `chooseDirectory()` 没跟上。**
+> 还有一半在窗口层：`NotchWindow.steppingAside` 只还原 `level`，**不管键盘** ——
+> 模态期间 key 归模态框，结束后 AppKit 未必把它还给岛，而窗口不是 key 的话
+> `@FocusState` 设了也不会有光标。新加的 `NotchWindow.reclaimKeyboard()` 补这一半，
+> 并且照旧尊重 `canBecomeKey` 那道闸门（收起态的岛不许被它拽成 key，spec 11.2）。
 >
-> 另外 `NotchWindow.steppingAside` 只还原 `level`，没有人把岛重新 `makeKey`。
-> 窗口不是 key 的话，`@FocusState` 设了也不会有光标。
+> 三条测试钉着：`ModalLayeringTests`「让位不负责把键盘还回来」（这是 `reclaimKeyboard`
+> 存在的理由）、「reclaimKeyboard 把看得见的岛重新变成 key」、
+> 「收起态的岛不会被 reclaimKeyboard 抢走键盘」。
 
 > **13.13 想更丝滑：现在换位和松手都是硬切**（2026-08-03 用户提，未做）。
 >

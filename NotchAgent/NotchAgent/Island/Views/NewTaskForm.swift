@@ -54,10 +54,25 @@ struct NewTaskForm: View {
         .padding(.bottom, bottomInset)
         .onAppear {
             selected = projects.first
-            // 抢两次：NSApp.activate() 是异步的，onAppear 时窗口可能还没成为 key，
-            // app 激活后 AppKit 会把 first responder 恢复成它记着的上一个，把这里顶掉。
+            focusInstruction()
+        }
+    }
+
+    /// 把光标放进指令框。**抢两次，不是一次。**
+    ///
+    /// `NSApp.activate()` 是异步的，`onAppear` 时窗口可能还没成为 key；而 app 一激活，
+    /// AppKit 会把 first responder 恢复成它记着的上一个，把这一回合里设的焦点顶掉。
+    /// 隔一个 runloop 回合再设一次才稳（`InputBar.claimFocus()` 是同一个道理）。
+    ///
+    /// - Parameter reclaimingKeyboard: 刚从一个**模态框**回来时要为真。模态期间 key
+    ///   归模态框，结束后 AppKit 未必把它还给岛 —— 窗口不是 key 的话，
+    ///   `@FocusState` 设了也不会有光标（§13.9）。
+    private func focusInstruction(reclaimingKeyboard: Bool = false) {
+        if reclaimingKeyboard { NotchWindow.reclaimKeyboard() }
+        instructionFocused = true
+        Task { @MainActor in
+            if reclaimingKeyboard { NotchWindow.reclaimKeyboard() }
             instructionFocused = true
-            Task { @MainActor in instructionFocused = true }
         }
     }
 
@@ -207,6 +222,8 @@ struct NewTaskForm: View {
 
         guard result == .OK, let url = panel.url else { return }
         selected = ProjectDirectory(path: url.path, lastUsed: .now, hasSessions: false)
-        instructionFocused = true
+        // 这里原来只有一句 `instructionFocused = true` —— 同一个 runloop 回合、
+        // 也没人把键盘拿回岛上。于是目录选上了、光标却没了（§13.9）。
+        focusInstruction(reclaimingKeyboard: true)
     }
 }

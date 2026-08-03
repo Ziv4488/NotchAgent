@@ -96,9 +96,11 @@ struct IslandShell: View {
             }
             .overlay(alignment: .top) {
                 if model.state == .expanded {
+                    // 上沿只空出内凹圆弧那一段（8pt），不是整条状态带 ——
+                    // 空整条的话竖边上面一大截摸不着（见 `ResizeHandles.topInset`）。
                     ResizeHandles(model: model,
                                   islandSize: size,
-                                  topInset: model.geometry.menuBarHeight)
+                                  topInset: radii.inverted)
                 }
             }
     }
