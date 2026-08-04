@@ -402,6 +402,7 @@ socket 路径放 `~/Library/Application Support/NotchAgent/hooks.sock`，启动�
    tab 会自动带回视野，装得下时不橡皮筋。手测 §13.17–13.20
 6. **终端左右二分** —— 见下方「4.6 的范围」。用户 2026-08-02：拆分要**跟 Ghostty 一致**，
    而且「现在拖大其实整体还是挺足够的」—— 不急，排在最后
+7. **终端内搜索** —— 用户 2026-08-05 补记的需求，见下方「4.7 的范围」。还没排优先级
 
 > 原第 3 项「展开宽度可拖拽」已在第 1 阶段提前做掉（左右竖边 + 底边 + 两个下角），只剩「同步更新 PTY 列数」，并入第 2 阶段的终端接入。
 
@@ -456,6 +457,35 @@ socket 路径放 `~/Library/Application Support/NotchAgent/hooks.sock`，启动�
 - 分屏与第 3 阶段的「第三方 app 真实窗口贴附」根本不兼容：没法把一个真实的 ChatGPT 窗口和一个终端拆成两半。所以 app tab 不参与分屏，这条限制要写进数据结构
 
 排在第 2 阶段之后 —— 现在设计窗格树等于对着一个还不存在的终端做架构。
+
+### 4.7 的范围：终端内搜索
+
+用户 2026-08-05 补记的需求：在岛的终端里搜内容。**还没开工，先把摸到的底记下来。**
+
+**SwiftTerm 1.15 已经把这件事做完了**，我们缺的只是一根线：
+
+| 它已经有的 | 在哪 |
+|---|---|
+| 搜索引擎（大小写 / 正则 / 全词，带行缓存） | `SearchEngine.swift`、`SearchService.swift`、`SearchLineCache.swift` |
+| `findNext` / `findPrevious` / `searchMatchSummary`（给「2/14」那种计数用）/ 清除 | `TerminalViewSearch.swift`，都是 `public` |
+| 一条现成的查找条（搜索框、上一个/下一个、选项按钮、关闭） | `Mac/MacFindBarView.swift`（`TerminalFindBarView`），由 `MacTerminalView` 自己叠在终端上 |
+| 入口 | `performFindPanelAction(_:)` / `performTextFinderAction(_:)`，都是 `open` |
+
+**缺的那根线是 ⌘F 送不到。** 岛是 `LSUIElement`，没有主菜单 —— 而这两个入口在正常
+app 里是「编辑 → 查找」的 key equivalent 沿响应链调过去的。⌘C/⌘V/⌘A 当初栽的是同一件事
+（见 `ObservingTerminalView.editingAction` 上面那段），做法也一样：在
+`editingAction` 里认下 `"f"`，调 `performTextFinderAction`，sender 用一个
+`tag = NSTextFinder.Action.showFindInterface.rawValue` 的 `NSMenuItem`。
+
+开工前要跟用户定的两件事：
+
+1. **用它自带的查找条，还是自己画一条。** 它那条是 `NSVisualEffectView`（毛玻璃），
+   叠在终端右上角 —— 岛上其余地方都是纯黑 + `#1E1E1E`，毛玻璃在这儿大概率
+   格格不入。自己画就要接 `findNext` / `searchMatchSummary` 那几个 API，工作量不大。
+2. **⌘F 归谁。** 岛的硬约束是「终端交互必须和真终端一模一样」，⌘F 在真终端里就是
+   查找，所以给终端没问题；但它同时是很多 TUI 自己的键。Claude Code 现在不用 ⌘F
+   （⌘ 组合它一概不收），可这条得写进 `docs/manual-tests.md` §10 末尾那张
+   「故意不一样的地方」表里。
 
 ## 明确不在本计划内
 

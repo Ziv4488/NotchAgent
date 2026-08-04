@@ -37,6 +37,11 @@ xcodebuild test -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -des
 4. **终端左右二分** —— 用户说「现在拖大其实整体还是挺足够的」，排最后
 5. **第 3 阶段贴附** —— 何时插队由用户定
 
+**没排进上面这张表的**：**终端内搜索**（用户 08-05 补记）。SwiftTerm 1.15 自带引擎、
+查找条和 `findNext` / `searchMatchSummary`，我们缺的只是「⌘F 送不到」那根线
+（岛没有主菜单，和 ⌘C/⌘V/⌘A 当初一样）。开工前要定两件事：用它自带那条毛玻璃
+查找条还是自己画、⌘F 归不归终端。细节见 plan 的「4.7 的范围」
+
 打磨里已做完的两项：错误态 UI（08-02）、tab 条横向滚动（08-02）。
 
 ## 挂着的
