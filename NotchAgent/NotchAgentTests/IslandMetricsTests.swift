@@ -262,11 +262,18 @@ struct IslandMetricsTests {
         }
     }
 
-    @Test("窗口比岛能长到的最大宽度左右各再宽出一个内凹半径，圆弧才不会被切掉")
-    func containerLeavesRoomForInvertedArcs() {
+    @Test("窗口左右各让出内凹半径 + 阴影的地方，下面让出阴影的地方")
+    func containerLeavesRoomForArcsAndShadow() {
         for (name, geometry) in allGeometries {
             let metrics = IslandMetrics(geometry: geometry)
-            #expect(metrics.containerFrame.width == metrics.maxExpandedSize.width + 16, "\(name)")
+            let maxSize = metrics.maxExpandedSize
+            // 单边余量 = 内凹半径 8 + 阴影包络。阴影那部分**写死 36**：
+            // 拿 `IslandTheme.edgeShadowMargin` 去比等号两边会一起动，
+            // 把余量改回 0 这条照样绿。真的够不够看下面那条像素测试。
+            let side = (metrics.containerFrame.width - maxSize.width) / 2
+            #expect(side >= 8 + 36, "\(name)：单边只留了 \(side)pt")
+            #expect(metrics.containerFrame.height - maxSize.height >= 36,
+                    "\(name)：下面只留了 \(metrics.containerFrame.height - maxSize.height)pt")
         }
     }
 

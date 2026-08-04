@@ -361,6 +361,42 @@ struct IslandPixelTests {
                 "岛下沿 55pt 之外还压暗着 \(bottomHaze) —— 黑雾又回来了")
     }
 
+    /// **岛拖到最大时，阴影得在画布边缘之前化干净。**
+    ///
+    /// 画布就是那块 `NSWindow`，窗口画不到自己 frame 之外去。以前画布只比岛能长到的
+    /// 最大宽度多出两个内凹半径（每边 8pt），岛一旦拖到最大，阴影就在 8pt 处被齐齐
+    /// 切断 —— 贴着岛留下一条外沿是刀切直线的黑带，正是用户 2026-08-04 报的
+    /// 「拖到一定大小（大），会出现一条不一样的黑边」。量他那张截图：壁纸亮度
+    /// 在一个像素之内从 76% 跳回 100%。
+    ///
+    /// 所以这条**必须按 `containerFrame` 的尺寸渲**，不能用 `canvas(around:)` 那块
+    /// 宽松画布 —— 宽松画布上阴影哪儿都化得开，切没切根本量不出来。
+    @Test("岛拖到最大：阴影在画布边缘之前化干净")
+    func shadowFitsInsideTheCanvasAtMaximumSize() throws {
+        let model = IslandModel.previewModel(state: .expanded)
+        model.resizeExpanded(width: model.expandedWidthRange.upperBound,
+                             contentHeight: model.expandedContentHeightRange.upperBound)
+        let size = model.metrics.containerFrame.size
+        let image = try raster(IslandShell(model: model), size: size)
+
+        let row = Int(model.size.height) / 2
+        let bodyLeft = Int((size.width - model.size.width) / 2)
+
+        // 先确认这张图上**真的有阴影** —— 否则下面三条在一张没投影的图上全绿。
+        let near = image.darkening(bodyLeft - 3, row)
+        #expect(near > 0.15, "岛左沿外 3pt 只压暗了 \(near)，这张图根本没画阴影")
+
+        // 画布最左、最右那一列。被切的话这儿正是断口，压得很暗。
+        #expect(image.darkening(0, row) < 0.02,
+                "画布左边缘还压暗着 \(image.darkening(0, row)) —— 阴影被窗口切了")
+        #expect(image.darkening(image.width - 1, row) < 0.02,
+                "画布右边缘还压暗着 \(image.darkening(image.width - 1, row))")
+        // 下边缘同理，避开正中那条拖拽提示横条。
+        let column = cleanColumn(image)
+        #expect(image.darkening(column, image.height - 1) < 0.02,
+                "画布下边缘还压暗着 \(image.darkening(column, image.height - 1))")
+    }
+
     /// **顶边不描线。**
     ///
     /// 岛的顶边正好压在屏幕物理上沿，一条描边只有内侧那半截露得出来 ——

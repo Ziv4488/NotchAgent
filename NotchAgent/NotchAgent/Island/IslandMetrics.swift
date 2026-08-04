@@ -167,13 +167,22 @@ struct IslandMetrics {
     /// 代价是一大块透明画布压在屏幕上半部，全靠 `NotchHostingView` 的轮廓命中测试
     /// 把点击放行下去 —— 那个命中测试因此是**必需**的，不是优化。
     ///
-    /// 宽度额外留出两倍内凹半径 —— 内凹圆弧画在主体两侧之外，否则会被窗口边界切掉。
+    /// 画布比岛能长到的最大尺寸还要大出两圈：
+    ///
+    /// 1. 左右各一个**内凹半径** —— 上沿那两段圆弧画在主体两侧之外。
+    /// 2. 左右和下面再各一个 `IslandTheme.edgeShadowMargin` —— 外沿的阴影要有地方
+    ///    化干净。窗口画不到自己 frame 之外，留窄了阴影就被齐齐切断，
+    ///    岛外面平白多出一条刀切的黑边（用户 2026-08-04 拖到最大宽度时报的）。
+    ///
+    /// **上面不留**：岛的顶边压在屏幕物理上沿，往上让出来的地方在屏幕外。
     var containerFrame: CGRect {
         let maxSize = maxExpandedSize
-        let width = maxSize.width + constants.invertedCornerRadius * 2
+        let margin = IslandTheme.edgeShadowMargin
+        let width = maxSize.width + constants.invertedCornerRadius * 2 + margin * 2
+        let height = maxSize.height + margin
         return CGRect(x: geometry.islandCenterX - width / 2,
-                      y: geometry.screenTopY - maxSize.height,
+                      y: geometry.screenTopY - height,
                       width: width,
-                      height: maxSize.height)
+                      height: height)
     }
 }
