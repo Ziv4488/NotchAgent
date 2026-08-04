@@ -253,20 +253,23 @@ struct TabChip: View {
         }
         .padding(.horizontal, TabStrip.Layout.chipHPadding)
         .padding(.vertical, TabStrip.Layout.chipVPadding)
+        // 芯片是**胶囊**，不是圆角矩形（用户 2026-08-04 给了参考截图）。
+        // 用 `Capsule` 而不是写死半径：半径永远是高度的一半，
+        // 以后动 `chipVPadding` 或 `iconSize` 都不用回来改这个数。
         .background {
             ZStack {
                 // 拖动中先垫一层不透明的。颜色和芯片底下那块岛体相同，
                 // 所以看不出多了一层，但邻居的字透不过来了。
                 if let backing {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(backing)
+                    Capsule().fill(backing)
                 }
                 if isSelected {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    Capsule()
                         .fill(IslandTheme.tabActiveFill)
-                        .overlay(alignment: .top) {
-                            Rectangle().fill(Color.white.opacity(0.13)).frame(height: 0.5)
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        // `strokeBorder` 而不是 `stroke`：整条线落在形状**里面**，
+                        // 不会有半条挂在外面把胶囊撑大半个像素。
+                        .overlay { Capsule().strokeBorder(IslandTheme.tabActiveStroke,
+                                                          lineWidth: 0.5) }
                 }
             }
         }

@@ -676,5 +676,43 @@ struct IslandPixelTests {
                 "没垫底的芯片居然也不漏 —— 那这条测的就不是「垫底」这件事")
     }
 
+    // MARK: - §13.17：tab 芯片是胶囊
+
+    /// 芯片的两头是**半圆**，不是圆角矩形的角（用户 2026-08-04 给了参考截图）。
+    ///
+    /// **量的是「拖动中那层不透明底」**，不是选中态那层白 11%。后者是半透明的，
+    /// 叠在品红上算出来是 `(1, 0.11, 1)` —— 还是品红色调，`isIsland` 一个都不认，
+    /// 逐行找到的"第一个中性像素"会是芯片**里面的字**。第一版就是这么写的，
+    /// 于是把 `Capsule` 换回 8pt 圆角矩形它照样绿：它量的根本不是形状。
+    /// `backing` 那层是同一个 `Capsule`、但不透光，轮廓之内一律是黑。
+    ///
+    /// 判据是**距顶 2.5pt 处左边缘内收多少**。芯片高 22pt，胶囊半径就是 11pt，
+    /// 那儿该收 4.5pt；原来写死的 8pt `.continuous` 圆角在同一处只收 2.25pt。
+    /// （`.continuous` 的角**没有**贴着 0 的直边 —— 8pt 的角在 22pt 高上左右两个
+    /// 已经接上了，所以不能拿「直边有多长」当判据。）
+    @Test("tab 芯片是胶囊：两头是半圆")
+    func chipIsACapsule() throws {
+        let tab = IslandTab(title: "写测试", kind: .cli, status: .running, accent: .orange)
+        let size = CGSize(width: TabStrip.chipWidth(for: tab),
+                          height: TabStrip.Layout.stripHeight)
+        // 判据差在 2pt 上下，scale 1 量不准 —— 渲成 4 倍，一个像素是 0.25pt。
+        let px = 4
+        let image = try raster(TabChip(tab: tab, isSelected: false, backing: .black),
+                               size: size, scale: CGFloat(px))
+
+        func inset(atY y: CGFloat) throws -> CGFloat {
+            let x = try #require(image.firstIsland(row: Int(y * CGFloat(px))),
+                                 "距顶 \(y)pt 那一行没量到芯片")
+            return CGFloat(x) / CGFloat(px)
+        }
+
+        let near = try inset(atY: 2.5)
+        #expect(near > 3.5, "距顶 2.5pt 处左边缘只内收了 \(near)pt —— 这是圆角矩形的角，不是半圆")
+
+        // 正中那行必须贴到 0，否则量到的压根不是轮廓。
+        let middle = try inset(atY: TabStrip.Layout.chipVPadding + TabStrip.Layout.iconSize / 2)
+        #expect(middle < 0.5, "芯片正中的左边缘在 \(middle)pt —— 量到的不是轮廓")
+    }
+
 
 }
