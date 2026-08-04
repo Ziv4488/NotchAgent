@@ -94,10 +94,14 @@ struct ResizeCursorTests {
 
     /// 报上来的必须是**真实布局**里的位置，不是谁在别处重算的一份。
     ///
-    /// 竖边贴着岛的左右两沿、和岛一样高（减去上沿让位和下角那一段）；
-    /// 底边贴着岛的下沿。位置对不上就是光标出现在错的地方 —— 用户报的「位置暧昧」。
-    @Test("报上来的位置贴着岛的边")
-    func reportedFramesHugTheIslandEdges() async throws {
+    /// 三条边都**跨在岛的边线上**：里面 4pt、外面 4pt（2026-08-04 改的，之前
+    /// 8pt 全在岛里面 —— 得先把指针挪进岛才拖得动，和拖系统窗口的手感不一样）。
+    /// 位置对不上就是光标出现在错的地方 —— 用户报过的「位置暧昧」。
+    ///
+    /// 内外那两个数**写死在断言里**，不引用 `Layout.innerReach` / `.outerReach`：
+    /// 引用的话等号两边一起动，把热区改回全在里面这条照样绿。
+    @Test("报上来的位置跨在岛的边线上：里 4pt、外 4pt")
+    func reportedFramesStraddleTheIslandEdges() async throws {
         let (window, hosting, model) = await mountIsland()
         defer { window.orderOut(nil) }
 
@@ -107,17 +111,51 @@ struct ResizeCursorTests {
         let bodyBottom = model.size.height
 
         let leading = try #require(model.resizeHandleFrames[.leadingEdge])
-        #expect(abs(leading.minX - bodyLeft) <= 1, "左竖边在 \(leading.minX)，岛的左沿在 \(bodyLeft)")
-        #expect(abs(leading.width - ResizeHandles.Layout.edgeThickness) <= 1)
+        #expect(abs(leading.minX - (bodyLeft - 4)) <= 1,
+                "左竖边外沿在 \(leading.minX)，该在岛左沿 \(bodyLeft) 外 4pt")
+        #expect(abs(leading.maxX - (bodyLeft + 4)) <= 1,
+                "左竖边内沿在 \(leading.maxX)，该在岛左沿 \(bodyLeft) 内 4pt")
         // 上沿只让开内凹圆弧那一段 —— 让开整条状态带的话这里会是 32。
         #expect(abs(leading.minY - model.cornerRadii.inverted) <= 1,
                 "左竖边从 y=\(leading.minY) 起，该是内凹半径 \(model.cornerRadii.inverted)")
 
         let trailing = try #require(model.resizeHandleFrames[.trailingEdge])
-        #expect(abs(trailing.maxX - bodyRight) <= 1, "右竖边在 \(trailing.maxX)，岛的右沿在 \(bodyRight)")
+        #expect(abs(trailing.maxX - (bodyRight + 4)) <= 1,
+                "右竖边外沿在 \(trailing.maxX)，该在岛右沿 \(bodyRight) 外 4pt")
+        #expect(abs(trailing.minX - (bodyRight - 4)) <= 1, "右竖边内沿在 \(trailing.minX)")
 
         let bottom = try #require(model.resizeHandleFrames[.bottomEdge])
-        #expect(abs(bottom.maxY - bodyBottom) <= 1, "底边在 \(bottom.maxY)，岛的下沿在 \(bodyBottom)")
+        #expect(abs(bottom.maxY - (bodyBottom + 4)) <= 1,
+                "底边外沿在 \(bottom.maxY)，该在岛下沿 \(bodyBottom) 外 4pt")
+        #expect(abs(bottom.minY - (bodyBottom - 4)) <= 1, "底边内沿在 \(bottom.minY)")
+
+        // 两个下角也得跟着探出去，不然角上有一小块够不着。
+        let corner = try #require(model.resizeHandleFrames[.bottomTrailing])
+        #expect(abs(corner.maxX - (bodyRight + 4)) <= 1, "右下角外沿在 \(corner.maxX)")
+        #expect(abs(corner.maxY - (bodyBottom + 4)) <= 1, "右下角下沿在 \(corner.maxY)")
+    }
+
+    /// **岛外面那 4pt 得由命中测试收下。**
+    ///
+    /// 透明画布一律不吃点击（§2.2b 的旧账），热区跨到边线外面之后，外面那半圈
+    /// 要是照旧穿透，就成了「光标已经变成缩放箭头，按下去却落到底下的窗口上」。
+    /// 再往外一点则必须照旧穿透 —— 收回来的只能是热区那几 pt。
+    @Test("岛外那 4pt 归岛收，再往外照旧穿透")
+    func theOuterReachIsNotSwallowedByTheCanvas() async throws {
+        let (window, hosting, model) = await mountIsland()
+        defer { window.orderOut(nil) }
+
+        let bodyLeft = (hosting.bounds.width - model.size.width) / 2
+        let row = model.size.height / 2
+
+        #expect(hosting.accepts(CGPoint(x: bodyLeft - 2, y: row)),
+                "岛左沿外 2pt 落在热区里，却没被收下")
+        #expect(hosting.accepts(CGPoint(x: bodyLeft + 2, y: row)), "岛左沿内 2pt 本来就在岛里")
+        #expect(!hosting.accepts(CGPoint(x: bodyLeft - 9, y: row)),
+                "岛左沿外 9pt 已经出了热区，不该再被岛吃掉")
+        // 岛的正下方远处照旧穿透 —— 这块是那片透明画布。
+        #expect(!hosting.accepts(CGPoint(x: hosting.bounds.midX,
+                                         y: model.size.height + 60)))
     }
 
     /// 每块热区在岛的哪条边上 —— **两条路的光标都从这一个映射派生**，
@@ -250,13 +288,17 @@ struct ResizeCursorTests {
 
     /// 热区加宽到 8pt 是为了好抓，但**不能宽到压住收起用的 ✕**。
     /// 竖边就贴在状态带最右边那条线上，✕ 只留了那么点右边距。
+    ///
+    /// 会不会压到 ✕，看的是热区往岛**里**伸多少 —— 外面那半截在岛外面，
+    /// 上面不可能有按钮。2026-08-04 改成跨边之后里面那半从 8pt 减到 4pt，
+    /// 这条比以前更宽松，但仍然得钉着：两个数都还会有人去动。
     @Test("竖边的热区不会压到 ✕ 上")
     func theEdgeHandleLeavesTheCloseButtonAlone() {
-        let thickness = ResizeHandles.Layout.edgeThickness
+        let inner = ResizeHandles.Layout.innerReach
         let closeInset = StatusBand.Layout.closeTrailingInset
-        #expect(thickness <= closeInset,
-                "手柄 \(thickness)pt 宽，而 ✕ 只离右沿 \(closeInset)pt")
-        // 太细就是「摸不着」，那正是这轮要修的。
-        #expect(thickness >= 8)
+        #expect(inner <= closeInset,
+                "手柄往岛里伸 \(inner)pt，而 ✕ 只离右沿 \(closeInset)pt")
+        // 太细就是「摸不着」，那正是这轮要修的 —— 总厚度算里外两半。
+        #expect(ResizeHandles.Layout.edgeThickness >= 8)
     }
 }

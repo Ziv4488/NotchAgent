@@ -22,8 +22,16 @@ struct ResizeHandles: View {
     let topInset: CGFloat
 
     var body: some View {
+        // **比岛大一圈**：左右各 `outerReach`、下面一个 `outerReach`。
+        // 手柄照旧贴着这块底座的边排，于是每条热区都**跨在岛的边线上** ——
+        // 里面 `innerReach`、外面 `outerReach`（用户 2026-08-04：「边框内外都要有，
+        // 具体参数先按内 4pt 外 4pt」）。窗口边缘就是这么抓的，只在里面抓
+        // 意味着必须先"进"岛才拖得动。
+        //
+        // 上面不放：岛的顶边压在屏幕物理上沿，往上探出去的地方在屏幕外。
         Color.clear
-            .frame(width: islandSize.width, height: islandSize.height)
+            .frame(width: islandSize.width + Layout.outerReach * 2,
+                   height: islandSize.height + Layout.outerReach)
             // 这层底座只用来量出岛的尺寸好让手柄贴边排。**必须显式放行点击**——
             // Color.clear 在 SwiftUI 里是吃点击的，而这整块正压在输入框和 tab 条上面。
             .allowsHitTesting(false)
@@ -51,7 +59,12 @@ struct ResizeHandles: View {
             .padding(.horizontal, Layout.cornerSize.width)
             .overlay {
                 // 不画出来就等于没有这个功能。
+                //
+                // **往回抬一个 `outerReach`。** 热区现在跨在岛的边线上，居中放的话
+                // 这条横杠正好骑在下沿上、一半露在岛外面的桌面上。抬回去之后
+                // 它待的位置和热区跨边之前一模一样：离岛的下沿 4pt。
                 Capsule().fill(Color.white.opacity(0.16)).frame(width: 28, height: 3)
+                    .offset(y: -Layout.outerReach)
                     .allowsHitTesting(false)
             }
     }
@@ -191,12 +204,24 @@ struct ResizeHandles: View {
     }
 
     enum Layout {
-        /// 竖边 / 底边的可抓厚度。
+        /// 热区往岛**里**伸多少。
         ///
-        /// 6pt 太细，摸不着（用户报的「暧昧」）。**上限是 8** —— 竖边压在状态带的
-        /// 最右边，而收起用的 ✕ 只留了 `StatusBand.Layout.closeTrailingInset` 那么点
-        /// 右边距。再宽就压到 ✕ 上，§2.2b 那个「点了没反应」会重演。
-        static let edgeThickness: CGFloat = 8
+        /// **上限是 `StatusBand.Layout.closeTrailingInset`** —— 竖边压在状态带的
+        /// 最右边，收起用的 ✕ 只留了那么点右边距，再往里就压到 ✕ 上，
+        /// §2.2b 那个「点了没反应」会重演。
+        static let innerReach: CGFloat = 4
+        /// 热区往岛**外**伸多少。
+        ///
+        /// 岛外面这一圈本来是放行给下面的 app 的（透明画布一律不吃点击），
+        /// 收进来的这几 pt 得由 `NotchHostingView.hitTest` 单独放行 —— 不然
+        /// 光标在那儿已经变成缩放箭头，按下去却穿到底下的窗口上。
+        static let outerReach: CGFloat = 4
+        /// 竖边 / 底边的可抓厚度 —— **跨在岛的边线上**，里外各占一半。
+        ///
+        /// 8pt 是够抓的宽度（6pt 摸不着，用户报过「暧昧」）。原来这 8pt 全在
+        /// 岛**里面**，得先进岛才拖得动；2026-08-04 改成内 4 外 4，
+        /// 和拖系统窗口边缘的手感一致，顺带把里面那半让出去 4pt 给 ✕。
+        static var edgeThickness: CGFloat { innerReach + outerReach }
         static let cornerSize = CGSize(width: 30, height: 20)
     }
 }

@@ -36,10 +36,28 @@ class NotchHostingView: NSHostingView<IslandShell> {
     override func hitTest(_ point: NSPoint) -> NSView? {
         // hitTest 收到的是父视图坐标系里的点。
         let local = convert(point, from: superview)
-        // 岛的轮廓，外加挂在它下面的选项浮层 —— 那块在轮廓之外，
-        // 不单独放行的话点上去没有任何反应（透明区一律不收事件）。
-        guard islandPath().contains(local) || menuRect().contains(local) else { return nil }
+        guard accepts(local) else { return nil }
         return super.hitTest(point)
+    }
+
+    /// 这一点归不归岛管。**`hitTest` 的放行判定，单独拎出来是为了能测**
+    /// —— 离屏的 `super.hitTest` 靠不靠得住是 AppKit 的事，
+    /// 而这轮改坏的一直是「放不放行」这一步。
+    ///
+    /// 三块地方放行，其余一律穿透到下面的 app：
+    ///
+    /// 1. 岛的轮廓本身。
+    /// 2. 挂在岛下面的选项浮层 —— 它在轮廓之外，不单独放行点上去没有任何反应。
+    /// 3. 拖拽热区**探到岛外面**的那一圈（`ResizeHandles.Layout.outerReach`）。
+    ///    热区 2026-08-04 改成跨在边线上，外面那 4pt 要是照旧穿透，
+    ///    就成了「光标在那儿已经是缩放箭头，按下去却落到底下的窗口上」。
+    ///    用的是手柄自己报上来的位置，不另算一遍：跟踪区、cursor rect、
+    ///    命中测试三处口径分开算，迟早有一处对不上，而对不上的表现正是
+    ///    「看着能拖，按下去没反应」。收起态没有手柄，字典是空的，这条恒为假。
+    func accepts(_ pointInView: NSPoint) -> Bool {
+        if islandPath().contains(pointInView) || menuRect().contains(pointInView) { return true }
+        return rootView.model.resizeHandleFrames.values
+            .contains { !$0.isEmpty && $0.contains(pointInView) }
     }
 
     /// 拖拽热区的光标形状 —— **只在 macOS 14 上走这里**。
