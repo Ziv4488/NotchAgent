@@ -20,6 +20,16 @@ struct NotchShape: Shape {
     /// 上沿两侧内凹拐角半径。0 表示退化成普通圆角矩形（无刘海屏）。
     var invertedRadius: CGFloat
 
+    /// 收不收顶边那条直线。
+    ///
+    /// **只对描边有意义。** 填充和命中测试遇到开放子路径会隐式闭合，
+    /// 两种取值画出来、点出来都一模一样；`stroke` 才分得出来 ——
+    /// 关掉之后那条线从左上内凹弧的起点画到右上内凹弧的终点就停，顶边不描。
+    ///
+    /// 岛的顶边正好压在屏幕物理上沿，描上去只有内侧半条露得出来，
+    /// 读起来是刘海底下横着一道亮痕（用户 2026-08-04：「上方边缘不要边界」）。
+    var closesTop = true
+
     /// 让 spring 动画能同时插值两个半径。
     var animatableData: AnimatablePair<CGFloat, CGFloat> {
         get { AnimatablePair(bottomRadius, invertedRadius) }
@@ -82,7 +92,7 @@ struct NotchShape: Shape {
                         clockwise: false)
         }
 
-        path.closeSubpath()
+        if closesTop { path.closeSubpath() }
         return path
     }
 }

@@ -93,6 +93,17 @@ struct IslandShell: View {
             }
     }
 
+    /// 岛的外沿画不画。
+    ///
+    /// **idle 态不画。** 那时候岛就是刘海本身（宽只比刘海多两侧各 80pt，高正好
+    /// 一条菜单栏），沿着它描一圈亮线再挂一层阴影，读起来是「屏幕顶上浮着一根
+    /// 黑条」，而不是刘海。外沿是给**从菜单栏长出来的那部分**用的 ——
+    /// 岛一旦探到桌面上，它就需要一条边把自己和壁纸分开。
+    ///
+    /// 用户 2026-08-04 的原话：「ideal 态的时候按照之前的边缘方案」，
+    /// 也就是回到 08-02 那版：纯黑一块，什么都不加。
+    private var showsEdges: Bool { model.state != .idle }
+
     /// 岛体 + 外沿三层。参数与来历见 `IslandTheme` 的「岛的外沿」。
     ///
     /// **两条线都用 `stroke` 描在轮廓上，靠线宽的一半落在里、一半落在外。**
@@ -100,8 +111,15 @@ struct IslandShell: View {
     /// 内缩参数并不是把三个半径各减去一个数就完事 —— 上沿那两段内凹圆弧是
     /// 向外凸的，轮廓往里缩的时候它的半径要**变大**。为一条 0.5pt 的线去写
     /// 那套偏移几何不值当，描在轮廓上再裁一刀是等价的。
+    ///
+    /// **描的是 `closesTop: false` 那条开放轮廓**，顶边不描（见 `NotchShape`）。
+    /// 填充仍然用闭合的那条 —— 两者填出来一模一样，但不能拿开放的去 `clipShape`
+    /// 之外的地方图省事，语义上闭合与否只在描边时才成立。
     private var edges: some View {
         let shape = NotchShape(bottomRadius: radii.bottom, invertedRadius: radii.inverted)
+        let outline = NotchShape(bottomRadius: radii.bottom,
+                                 invertedRadius: radii.inverted,
+                                 closesTop: false)
         return shape
             .fill(.black)
             .overlay {
@@ -112,18 +130,23 @@ struct IslandShell: View {
             // 黑线：线宽取两倍，里外各一半。落在里面那半压在纯黑岛体上看不出来，
             // 露在外面的正好是要的 0.5pt。
             .overlay {
-                shape.stroke(IslandTheme.edgeLine,
-                             lineWidth: IslandTheme.edgeLineWidth * 2)
+                outline.stroke(IslandTheme.edgeLine,
+                               lineWidth: IslandTheme.edgeLineWidth * 2)
+                    .opacity(showsEdges ? 1 : 0)
             }
             // 亮线：同样取两倍线宽，再按轮廓裁掉外面那一半，只剩内侧 1pt。
             // 它盖住黑线内侧那一半 —— 从里往外于是正好是 1pt 白、0.5pt 黑。
             // **顺序不能反**：先描亮线的话，黑线会把它压掉一半，剩 0.5pt。
             .overlay {
-                shape.stroke(IslandTheme.edgeHighlight,
-                             lineWidth: IslandTheme.edgeHighlightWidth * 2)
+                outline.stroke(IslandTheme.edgeHighlight,
+                               lineWidth: IslandTheme.edgeHighlightWidth * 2)
                     .clipShape(shape)
+                    .opacity(showsEdges ? 1 : 0)
             }
-            .shadow(color: IslandTheme.edgeShadow,
+            // 收进 idle 时阴影要**淡出**，不能整层拿掉 —— `.shadow` 是不是挂着
+            // 属于视图结构，结构一变 SwiftUI 直接换一棵树、当帧闪一下。
+            // 颜色插到透明是同一棵树上的动画，跟着 `morph` 一起收。
+            .shadow(color: showsEdges ? IslandTheme.edgeShadow : .clear,
                     radius: IslandTheme.edgeShadowRadius,
                     y: IslandTheme.edgeShadowOffsetY)
     }

@@ -307,8 +307,9 @@ struct IslandPixelTests {
     /// 不是底色的像素」当作岛的下沿 —— 挂上投影之后那个位置跟着投影一起下移，
     /// 检查的带子也跟着走，于是测试照样绿。要查的东西自己会移动检查的地方，
     /// 这种度量一律不能用。岛的尺寸是已知的，直接拿。
+    /// **不含 idle。** 那一态整套外沿都不上（见 `idleWearsNoEdges`）。
     @Test("岛的外沿是三层：内亮线、外黑线、再往外阴影化得开",
-          arguments: [IslandState.idle, .running, .expanded])
+          arguments: [IslandState.running, .notice, .expanded])
     func islandHasThreeEdgeLayers(state: IslandState) throws {
         let model = IslandModel.previewModel(state: state)
         let size = canvas(around: model)
@@ -356,6 +357,62 @@ struct IslandPixelTests {
         }
         #expect(bottomHaze < 0.03,
                 "岛下沿 55pt 之外还压暗着 \(bottomHaze) —— 黑雾又回来了")
+    }
+
+    /// **顶边不描线。**
+    ///
+    /// 岛的顶边正好压在屏幕物理上沿，一条描边只有内侧那半截露得出来 ——
+    /// 画出来是刘海底下横着一道亮痕（用户 2026-08-04：「上方边缘不要边界」）。
+    /// 靠 `NotchShape.closesTop` 关掉：描的是一条开放轮廓，顶边那一段根本不在路径里。
+    ///
+    /// 取样点选**刘海正中那一列**：那儿状态带一个字都没有
+    ///（`statusBandTextStaysOutOfTheNotch` 钉着这件事），亮起来只可能是描边。
+    @Test("岛的顶边不描线", arguments: [IslandState.running, .expanded])
+    func topEdgeIsNotStroked(state: IslandState) throws {
+        let model = IslandModel.previewModel(state: state)
+        let size = canvas(around: model)
+        let px = 2
+        let image = try raster(IslandShell(model: model), size: size, scale: CGFloat(px))
+        let column = image.width / 2
+
+        // 亮线画在轮廓内侧 1pt —— 顶边要是描了，就是最上面这 1pt。
+        for y in 0..<(px * Int(IslandTheme.edgeHighlightWidth)) {
+            #expect(image.gray(column, y) < 0.05,
+                    "顶边往下第 \(y) 行灰度 \(image.gray(column, y))，顶边又描上了")
+        }
+
+        // 反过来确认这张图**真的画了外沿** —— 否则这条是靠「三层全丢了」蒙过去的。
+        let bodyLeft = Int((size.width - model.size.width) / 2) * px
+        let side = image.gray(bodyLeft + 1, Int(model.size.height) / 2 * px)
+        #expect(abs(side - 0.2) < 0.04, "侧边根本没有亮线（\(side)），这条测试等于没测")
+    }
+
+    /// **idle 态整套外沿都不上。**
+    ///
+    /// 那时候岛就是刘海本身（高正好一条菜单栏），沿着它描一圈亮线再挂一层阴影，
+    /// 读起来是「屏幕顶上浮着一根黑条」而不是刘海。用户 2026-08-04 的原话是
+    /// 「ideal 态的时候按照之前的边缘方案」—— 回到 08-02 那版，纯黑一块。
+    @Test("idle 态不描边、不投影")
+    func idleWearsNoEdges() throws {
+        let model = IslandModel.previewModel(state: .idle)
+        let size = canvas(around: model)
+        let px = 2
+        let image = try raster(IslandShell(model: model), size: size, scale: CGFloat(px))
+
+        let islandBottom = Int(model.size.height) - 1
+        let bodyLeft = Int((size.width - model.size.width) / 2) * px
+        let row = islandBottom / 2 * px
+
+        // 岛确实画出来了 —— 不然下面两条在一张空白品红上也是绿的。
+        #expect(image.isIsland(image.width / 2, 4), "idle 的岛根本没画出来")
+
+        // 轮廓内侧那 1pt：有亮线的话是灰度 0.2。
+        let side = image.gray(bodyLeft + 1, row)
+        #expect(side < 0.05, "idle 的侧边灰度 \(side) —— 亮线跑上来了")
+
+        // 贴着下沿外面：有阴影的话这儿会被压暗两成以上。
+        let near = image.darkening(image.width / 2, (islandBottom + 4) * px)
+        #expect(near < 0.03, "idle 的岛下面压暗了 \(near) —— 阴影跑上来了")
     }
 
     // MARK: - §6.3：文字不许压到刘海底下
