@@ -221,8 +221,32 @@ struct ResizeHandles: View {
         /// 8pt 是够抓的宽度（6pt 摸不着，用户报过「暧昧」）。原来这 8pt 全在
         /// 岛**里面**，得先进岛才拖得动；2026-08-04 改成内 4 外 4，
         /// 和拖系统窗口边缘的手感一致，顺带把里面那半让出去 4pt 给 ✕。
+        ///
+        /// **4 / 4 是量出来的**：拿一个真的系统窗口，把指针一步步挪过它的右边线
+        /// 和下边线，读 `NSCursor.currentSystem` —— 变成缩放光标的那一段是
+        /// **边线内 3pt、外 4pt**（`HotZoneProbe`，2026-08-05）。我们的 4/4
+        /// 就是照着这个来的。
         static var edgeThickness: CGFloat { innerReach + outerReach }
         static let cornerSize = CGSize(width: 30, height: 20)
+
+        /// **热区必须自己画上一层东西，哪怕看不见。**
+        ///
+        /// 岛的窗口是 `isOpaque = false`。这种窗口上，**点击派给谁是窗口服务器
+        /// 按 app 画出来的 alpha 判的**：alpha 为 0 的地方事件根本不进本进程，
+        /// 我们的 `hitTest` 说什么都没用。
+        ///
+        /// 岛外面那 4pt 看着是有东西的（阴影把桌面压暗了三成），但**阴影不算**
+        /// —— SwiftUI 的 `.shadow` 是 CALayer 的阴影，由渲染服务器在合成时加，
+        /// 不进 app 自己那块 alpha。截屏能截到它（`CGWindowListCreateImage` 拿的是
+        /// 合成结果），窗口服务器却当那儿是空的。这就是用户 2026-08-05 报的
+        /// 「热区内外 4pt 不行，会点到岛外的 app」：宽度没问题，是那一圈根本收不到事件。
+        ///
+        /// 阈值量出来是 **1/255**（`HotZoneProbe`：alpha 0.004 就收下，0 才穿透，
+        /// 和带子多宽无关）。所以铺一层 1% 的黑就够 —— 它落在已经被阴影压暗三成的
+        /// 那一圈里，肉眼分不出来，而窗口服务器认。
+        ///
+        /// **不能改成 `Color.clear`**，那就是 alpha 0，外面那半圈当场失效。
+        static let captureFilm: Double = 0.01
     }
 }
 
@@ -271,7 +295,10 @@ private struct DragTarget: View {
     @State private var dragging = false
 
     var body: some View {
-        Color.clear
+        // **不是 `Color.clear`。** 非不透明窗口上，alpha 为 0 的地方窗口服务器
+        // 直接把点击派给下面的 app，事件不进本进程 —— 岛外面那半圈会当场失效。
+        // 理由和量出来的阈值见 `ResizeHandles.Layout.captureFilm`。
+        Color.black.opacity(ResizeHandles.Layout.captureFilm)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)

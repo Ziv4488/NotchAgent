@@ -67,6 +67,46 @@ struct CursorShapeTests {
         try await crossTheZone(makeKey: true)
     }
 
+    /// **岛外面那 4pt 得真的收得到点击。**
+    ///
+    /// 这一层在我们的 `hitTest` 之前，而且完全不看它：岛的窗口 `isOpaque = false`，
+    /// **窗口服务器按 app 画出来的 alpha 决定这一下派给谁**，判成空的地方事件根本
+    /// 不进本进程。用户 2026-08-05 报的「热区内外 4pt 不行，会点到岛外的 app」
+    /// 就是这个 —— 那一圈看着有东西（阴影把桌面压暗了三成），可 `.shadow` 是
+    /// CALayer 的阴影、由渲染服务器合成时加的，不进 app 那块 alpha。
+    /// 修法是在热区上铺一层 1% 的黑（`Layout.captureFilm`），肉眼看不出来，
+    /// 窗口服务器认。
+    ///
+    /// **只有真的摆到屏幕上才测得了** —— `NSWindow.windowNumber(at:)` 问的是
+    /// 窗口服务器。离屏的 `hitTest` 一路绿，正是上一轮漏掉这条的原因。
+    @Test("岛外那 4pt：窗口服务器把点击派给岛")
+    func theOuterReachActuallyReceivesClicks() async throws {
+        let (window, model, frame) = try mount(makeKey: false)
+        defer { window.orderOut(nil) }
+        await settle(0.5)
+
+        /// 画布坐标 → 屏幕坐标，再问窗口服务器这一点归谁。
+        func islandOwns(_ point: CGPoint) -> Bool {
+            let screen = CGPoint(x: frame.minX + point.x, y: frame.maxY - point.y)
+            return NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
+                == window.windowNumber
+        }
+
+        let leading = try #require(model.resizeHandleFrames[.leadingEdge], "左竖边没报位置")
+        let bodyLeft = (frame.width - model.size.width) / 2
+        let row = model.size.height / 2
+
+        // 环境检查：岛身上那一点得先归我们。别的套件也在摆窗口，压上来这条就没得测。
+        guard islandOwns(CGPoint(x: bodyLeft + 20, y: row)) else { return }
+
+        #expect(islandOwns(CGPoint(x: leading.minX + 1, y: row)),
+                "岛左沿外 3pt 落在热区里，窗口服务器却把它派给了别人")
+        #expect(islandOwns(CGPoint(x: leading.minX + 3, y: row)), "岛左沿外 1pt 也该归岛")
+        // 再往外必须还给下面的 app —— 收回来的只能是热区那几 pt。
+        #expect(!islandOwns(CGPoint(x: leading.minX - 6, y: row)),
+                "热区之外 6pt 还被岛收着，那是把桌面吞了")
+    }
+
     // MARK: -
 
     private func crossTheZone(makeKey: Bool) async throws {
