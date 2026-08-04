@@ -321,7 +321,7 @@ socket 路径放 `~/Library/Application Support/NotchAgent/hooks.sock`，启动�
 | 2.4 监听端 | 未指定 | 裸 BSD socket，不用 `NWListener` | Network.framework 的 AF_UNIX 监听被系统拒（`SO_NECP_LISTENUUID failed [22]`），建得起来但收不到连接 |
 | 2.4 绑定 | 按 `session_id` | spawn 时注入 `NOTCH_TAB`，转发时作为第一行发出 | `session_id` 在 `SessionStart` 之前无从得知。环境变量能穿透到 hook 命令（已实测） |
 | 2.6 ProjectRegistry | 新写 | **复用第 1 阶段已有的 `ProjectDirectoryStore`** | 扫描、路径还原、排序、上限都已经在了 |
-| 3.2 输入框 | 展开态底部常驻输入框 | **有活会话时不绘制**，键盘直接归终端 | spec 5.2 要求授权只在 PTY 里发生。焦点不在终端上，`1/2/3`、⇧Tab、`Esc`、斜杠命令全废 |
+| 3.2 输入框 | 展开态底部常驻输入框 | **整个拆了**（2026-08-04） | 先是「有活会话时不绘制」（spec 5.2 要求授权只在 PTY 里发生，焦点不在终端上 `1/2/3`、⇧Tab、`Esc`、斜杠命令全废）。剩下的那些情况全都没有活进程，输入框回车写进去的 PTY 是死的 —— 用户 08-04 看实机：「没有任何作用的，整合成一个内框」 |
 | 用量三项 | 「走 `/usage` 或 statusline」 | 上下文读 transcript、5h/周 读 `~/.claude.json` 缓存、子代理数 `Task` 工具配对 | 见 spec 5.2b。拿不到时显示横线而不是 0% |
 
 **已知欠账**：`~/.claude.json` 里那份限额缓存只在 Claude Code 自己需要时刷新，实测常常是几天前的，于是 5h/周 多数时候显示横线。实时值要拿钥匙串里的 OAuth token 打接口 —— 涉及读用户凭据和代发网络请求，等用户拍板。
@@ -445,8 +445,8 @@ socket 路径放 `~/Library/Application Support/NotchAgent/hooks.sock`，启动�
 我需要看起来是整个岛，而不是终端下方跟岛外的内容没有边界，现在方向有点偏了」。
 卡片顶到底之后，岛的下沿就成了终端正文的边，桌面直接从字底下开始 —— 读起来是一块
 贴在屏幕上的终端，不是一座岛。现在卡片四边都留黑：左右各 7pt、下面 8pt
-（`PanelCard.bottomInset`，和 `InputBar` 的下内边距对齐，这样有没有输入框、
-岛的下边框都一样宽）。`bleedingBottomRadius` 连同它那条单测一起删掉了。
+（`PanelCard.bottomInset`；输入框 08-04 拆了之后这圈黑边永远由卡片自己留，
+岛的下边框一圈一样宽）。`bleedingBottomRadius` 连同它那条单测一起删掉了。
 
 ### 4.6 的范围：终端左右二分
 

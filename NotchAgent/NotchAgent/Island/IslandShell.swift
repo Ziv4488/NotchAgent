@@ -151,15 +151,6 @@ struct IslandShell: View {
                     y: IslandTheme.edgeShadowOffsetY)
     }
 
-    /// 内容区下面要不要自己留黑边。
-    ///
-    /// 会话活着的时候底下**没有**输入框（键盘直接归终端），内容区就是岛最下面
-    /// 那一层 —— 不留的话卡片直接顶到岛的下沿，岛就没有下边框了。
-    /// 会话结束、输入框回来之后，那圈黑边归输入框留。
-    private var contentBottomInset: CGFloat {
-        model.selectedTabHasLiveTerminal ? PanelCard.bottomInset : 0
-    }
-
     private var content: some View {
         VStack(spacing: 0) {
             StatusBand(model: model,
@@ -181,24 +172,26 @@ struct IslandShell: View {
                                 onCancel: model.cancelNewTask)
                         .transition(.opacity)
                 } else {
+                    // **展开态底下就这一层，内容区自己铺满。**
+                    //
+                    // 这里先后拆掉过两条：
+                    //
+                    // 1. `UsageBar`（ctx / 5h / 周 / 模式芯片 / 停止键）。终端里
+                    //    Claude Code 自己那条 statusline 就写着上下文和模式，岛再抄
+                    //    一遍是同一份信息占两行；中断也已经归 Esc（直接进 PTY）。
+                    // 2. `InputBar`（2026-08-04）。它只在**没有活进程**的时候画
+                    //    ——会话活着时键盘直接归终端，再摞一个框就是两个光标抢一份
+                    //    键入。可「没有活进程」恰恰意味着它按回车写进去的 PTY 是死的：
+                    //    `submitToSelected` 走 `runtime.write` 落到一个已经退出的
+                    //    会话上，什么都不会发生。用户 08-04 的原话是「没有任何作用的，
+                    //    整合成一个内框」。要接着聊就按「继续上次会话」（`--resume`），
+                    //    那才是真的把进程带回来。
+                    //
+                    // 两条拆掉的高度都没有从岛的总高里减掉（见
+                    // `IslandConstants.retiredInputBarHeight`），内容区吃下去了。
                     ContentArea(model: model, tab: model.selectedTab,
-                                bottomInset: contentBottomInset)
+                                bottomInset: PanelCard.bottomInset)
                         .transition(.opacity)
-                    // app tab 的内容区和输入框整体不绘制，真实窗口贴在下面（spec 3.2）。
-                    //
-                    // 这里原本还有一条 UsageBar（ctx / 5h / 周 / 模式芯片 / 停止键）。
-                    // 拆掉了：CLI 会话的终端里 Claude Code 自己那条 statusline 就写着
-                    // 上下文和模式，岛再抄一遍是同一份信息占两行；中断也已经归 Esc
-                    // ——它现在直接进 PTY，比按一个我们画的按钮更接近真终端。
-                    //
-                    // 会话活着的时候键盘直接归终端（见 TerminalPane），
-                    // 再摞一个输入框就是两个光标抢一份键入，只在没有活进程时才画它。
-                    if model.selectedTab?.kind != .app, !model.selectedTabHasLiveTerminal {
-                        InputBar(isRunning: false,
-                                 onSubmit: model.submitToSelected,
-                                 onStop: model.interruptSelectedTask)
-                            .transition(.opacity)
-                    }
                 }
             }
         }

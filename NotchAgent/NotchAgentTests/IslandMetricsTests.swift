@@ -135,13 +135,13 @@ struct IslandMetricsTests {
         }
     }
 
-    @Test("expanded 高度 = 菜单栏 + tab 条 + 内容区 + 输入框")
+    @Test("expanded 高度 = 菜单栏 + tab 条 + 内容区 + 拆掉的输入框那 44")
     func expandedHeight() {
         for (name, geometry) in allGeometries {
             let metrics = IslandMetrics(geometry: geometry)
             let c = metrics.constants
             let expected = geometry.menuBarHeight + c.tabStripHeight
-                + c.contentHeight + c.inputBarHeight
+                + c.contentHeight + c.retiredInputBarHeight
             #expect(metrics.size(for: .expanded).height == expected, "\(name)")
         }
     }
@@ -173,9 +173,14 @@ struct IslandMetricsTests {
 
     /// §8.5b：会话从「在跑」变成「已结束」，岛的**总高度一点都不变**。
     ///
-    /// 在跑的时候底下没有输入框（键盘整个归终端），结束之后输入框回来 ——
-    /// 那 44pt 是由内容区吸收的，不是加在岛上的。会话状态一变岛就抽搐一下是 bug。
-    @Test("会话结束时岛的总高度不变 —— 输入框那 44pt 由内容区吸收")
+    /// 在跑的时候画的是终端，结束之后换成「继续上次会话」那张卡 —— 两块的
+    /// 高度是同一个（内容区 `maxHeight: .infinity`），岛不该跟着抽一下。
+    ///
+    /// 这条 2026-08-04 之前守的是另一件事：那时结束之后底下会多出一条输入框，
+    /// 它那 44pt 由内容区让出来、不加在岛上。输入框现在拆了（见
+    /// `IslandConstants.retiredInputBarHeight`），44pt 还在总高里，
+    /// 这条守的东西没变 —— 状态一变，高度一个像素都不许动。
+    @Test("会话结束时岛的总高度不变")
     func endingASessionKeepsTheIslandHeight() {
         let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
         model.debugStartSession(named: "a")

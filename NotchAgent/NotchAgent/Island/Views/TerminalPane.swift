@@ -70,7 +70,7 @@ struct TerminalPane: NSViewRepresentable {
 
 /// 只做一件事：视图一挂到窗口上就把终端设成 first responder。
 ///
-/// 和 `InputBar` 里那次是同一个坑 —— `NSApp.activate()` 是异步的，
+/// 和 `NewTaskForm.focusInstruction()` 是同一个坑 —— `NSApp.activate()` 是异步的，
 /// 视图刚建好时窗口还不是 key，这时候设 first responder 会在 app 真正激活后
 /// 被 AppKit 恢复成它记着的上一个。所以要在下一轮 runloop 再抢一次。
 private final class FocusingContainer: NSView {

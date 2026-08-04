@@ -22,9 +22,11 @@ struct PanelCard: View {
     /// 卡片左右各让出这么多，露出岛体的黑。
     static let inset: CGFloat = 7
 
-    /// 卡片是岛最底下那一层时，下面留出这么多黑边。
-    /// 数值跟 `InputBar` 的 `.padding(.bottom, 8)` 对齐 —— 会话活着时下面没有输入框，
-    /// 两种情况下岛的下边框应当一样宽。
+    /// 卡片下面留出这么多黑边。
+    ///
+    /// 展开态底下**只有这一张卡**（输入框 2026-08-04 拆了，见
+    /// `IslandConstants.retiredInputBarHeight`），所以这圈黑边永远由它自己留 ——
+    /// 不再有「会话活着归内容区留、结束了归输入框留」那两条路。
     static let bottomInset: CGFloat = 8
 
     /// 卡片的圆角。**跟着岛的下角走，不是随便挑的一个数。**

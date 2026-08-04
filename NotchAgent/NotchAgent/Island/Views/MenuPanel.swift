@@ -229,7 +229,7 @@ private struct TextEntryRow: View {
     ///
     /// 顺序不能反，也不能只设一次：`NSApp.activate()` 是异步的，app 真正激活时
     /// AppKit 会把 first responder 恢复成它记着的上一个，把这里刚设的顶掉 ——
-    /// 和 `InputBar.claimFocus()` 是同一个坑。
+    /// 和 `NewTaskForm.focusInstruction()` 是同一个坑。
     private func claimFocus() {
         onFocusRequest()
         focused = true

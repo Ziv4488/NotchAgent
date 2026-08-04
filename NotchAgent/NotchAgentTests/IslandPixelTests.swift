@@ -228,13 +228,15 @@ struct IslandPixelTests {
 
     // MARK: - §10.10c / 10.10d：岛下沿那一圈
 
-    /// §10.10c：会话结束、输入框回来之后，岛的下边框**一样宽**。
+    /// §10.10c：**会话结束之后，岛的下边框还是 8pt。**
     ///
-    /// 会话活着时那 8pt 由内容区留（下面没有输入框），结束后由输入框自己的
-    /// `.padding(.bottom, 8)` 留。两条路各留各的，谁改了谁都不会惊动对方 ——
-    /// 所以要有一条钉着「两边都是 8」。
-    @Test("岛的下边框：输入框回来之后还是 8pt")
-    func islandKeepsItsBottomEdgeWithTheInputBar() throws {
+    /// 这条量的是整块岛（`IslandShell`），不是单独一个 `ContentArea` ——
+    /// 那 8pt 是从 shell 里一路传下去的（`bottomInset:`），传丢了这条才红。
+    ///
+    /// 结束态原来底下还摞着一条输入框，黑边归它留；输入框 2026-08-04 拆了
+    ///（见 `IslandConstants.retiredInputBarHeight`），现在两种情况走的是同一条路。
+    @Test("岛的下边框：会话结束之后还是 8pt")
+    func islandKeepsItsBottomEdgeAfterTheSessionEnds() throws {
         let model = detachedModel()
         let image = try raster(IslandShell(model: model), size: canvas(around: model))
 

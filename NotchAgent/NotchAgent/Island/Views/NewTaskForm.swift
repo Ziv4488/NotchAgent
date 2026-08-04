@@ -62,7 +62,8 @@ struct NewTaskForm: View {
     ///
     /// `NSApp.activate()` 是异步的，`onAppear` 时窗口可能还没成为 key；而 app 一激活，
     /// AppKit 会把 first responder 恢复成它记着的上一个，把这一回合里设的焦点顶掉。
-    /// 隔一个 runloop 回合再设一次才稳（`InputBar.claimFocus()` 是同一个道理）。
+    /// 隔一个 runloop 回合再设一次才稳（`MenuPanel.claimFocus()`、`TerminalPane` 里
+    /// 那个 `FocusingContainer` 都是同一个道理）。
     ///
     /// - Parameter reclaimingKeyboard: 刚从一个**模态框**回来时要为真。模态期间 key
     ///   归模态框，结束后 AppKit 未必把它还给岛 —— 窗口不是 key 的话，

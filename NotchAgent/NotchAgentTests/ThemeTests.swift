@@ -69,11 +69,11 @@ struct ThemeTests {
     /// 「我对月牙没有意见，我需要看起来是整个岛，而不是终端下方跟岛外的内容
     /// 没有边界」—— 顶到底之后岛的下沿就成了正文的边，桌面从字底下开始。
     /// 别再把这两个数改成 0。
-    @Test("卡片四边都留黑边，下面那圈和输入框一样宽")
+    @Test("卡片四边都留黑边")
     func cardKeepsAMargin() {
         #expect(PanelCard.inset > 0)
         #expect(PanelCard.bottomInset > 0)
-        // InputBar 的 `.padding(.bottom, 8)`：有没有输入框，下边框都得一样宽。
+        // 展开态底下只有这一张卡（输入框 08-04 拆了），这圈黑边由它自己留。
         #expect(PanelCard.bottomInset == 8)
     }
 

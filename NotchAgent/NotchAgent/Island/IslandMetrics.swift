@@ -30,8 +30,17 @@ struct IslandConstants: Equatable, Sendable {
     /// 内容区**实际**一直是 342，只有常量在说 320。这里把那 22pt 从 chrome
     /// 挪回内容区，岛的总高一个像素都没变，但每个数都对得上自己的名字了。
     var contentHeight: CGFloat = 342
-    /// expanded 态输入框（含外边距）高度。
-    var inputBarHeight: CGFloat = 44
+    /// **拆掉的那条输入框留下的 44pt。**
+    ///
+    /// 输入框 2026-08-04 拆了（它只在没有活进程时才画，而那时它写进去的 PTY
+    /// 是死的，按回车什么都不会发生）。这 44pt **故意留在总高里**，被内容区
+    /// 吃掉 —— 和用量条那 22pt 当初的处境一样。
+    ///
+    /// **但这次没像用量条那样把它挪进 `contentHeight`。** 那个数是用户拖出来的、
+    /// 存在 `UserDefaults` 里的（`Preferences.expandedContentHeight`）：口径一改，
+    /// 存过尺寸的人下次开岛就矮 44pt，而存量值分不出是老口径还是新口径。
+    /// 名字改成 `retired…` 是为了别再有人以为下面画着一条输入框。
+    var retiredInputBarHeight: CGFloat = 44
     /// 无刘海屏的宽度基准，替代刘海宽度（spec 3.4）。
     var fallbackNotchWidth: CGFloat = 200
 
@@ -75,13 +84,14 @@ struct IslandMetrics {
         self.expandedContentHeight = expandedContentHeight ?? constants.contentHeight
     }
 
-    /// expanded 态里内容区之外的固定开销：状态带 + tab 条 + 输入框。
+    /// expanded 态里内容区之外的固定开销。
     ///
-    /// 这三样是**真的画出来**的三层。曾经还加过一个 `usageBarHeight`（22），
-    /// 用量条拆掉之后它还留在这个和里，于是 chrome 报的高度比实际多 22pt、
-    /// 内容区反过来少报同样多。两个数一起改（见 `contentHeight`），总高不变。
+    /// 真的画出来的只有前两样：状态带 + tab 条。第三样是**已经拆掉的输入框**
+    /// 留下的 44pt（见 `retiredInputBarHeight`），它还算在这里，那块地方
+    /// 由内容区吃下去。曾经还有个 `usageBarHeight`（22），用量条拆掉时把它
+    /// 挪进了 `contentHeight`；这次没这么办，理由写在 `retiredInputBarHeight` 上。
     var expandedChromeHeight: CGFloat {
-        geometry.menuBarHeight + constants.tabStripHeight + constants.inputBarHeight
+        geometry.menuBarHeight + constants.tabStripHeight + constants.retiredInputBarHeight
     }
 
     /// 宽度基准：有刘海取刘海实际宽度，无刘海取固定值。

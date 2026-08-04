@@ -617,12 +617,6 @@ final class IslandModel {
         send(.sessionProgress)
     }
 
-    /// 输入框回车 / 终端外的追问，写进 PTY。
-    func submitToSelected(_ text: String) {
-        guard let id = selectedTabID, let runtime else { return }
-        runtime.write(text + "\r", to: id)
-    }
-
     /// 收起态那个输入框回车：整段打进 PTY，然后把键盘还回去。
     ///
     /// **整段一次性发，不是逐字发。** 逐字发看起来更像真终端，但中文输入法
