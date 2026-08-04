@@ -87,7 +87,7 @@ struct ThemeTests {
     func cardIsConcentricWithTheIsland() {
         let island = IslandConstants.default.bottomCornerRadius
         #expect(PanelCard.cardRadius == island - PanelCard.inset)
-        #expect(PanelCard.cardRadius == 5)
+        #expect(PanelCard.cardRadius == 9)
     }
 
     /// WCAG 2.1 的相对亮度与对比度公式。

@@ -75,19 +75,7 @@ struct IslandShell: View {
     private var island: some View {
         content
             .frame(width: canvasWidth, height: size.height, alignment: .top)
-            .background {
-                NotchShape(bottomRadius: radii.bottom, invertedRadius: radii.inverted)
-                    .fill(.black)
-                    .overlay {
-                        // 悬停只做轻微提亮，不展开、不预览（spec 3.1）。
-                        NotchShape(bottomRadius: radii.bottom, invertedRadius: radii.inverted)
-                            .fill(model.isHovering && model.state != .expanded
-                                  ? IslandTheme.hoverTint : Color.clear)
-                    }
-                    // 这里先后去掉过两样东西：0.5pt 白色描边，和一圈投影。
-                    // 岛是纯黑的，描边读起来是灰框不是高光；投影落在透明画布上是一层
-                    // 洗不掉的黑雾，展开态四周尤其明显。岛靠形状立住，不靠这两样。
-            }
+            .background { edges }
             // 只有轮廓内才吃鼠标事件，画布其余部分让点击穿透到下面的 app。
             .contentShape(NotchShape(bottomRadius: radii.bottom, invertedRadius: radii.inverted))
             .onHover { model.isHovering = $0 }
@@ -103,6 +91,41 @@ struct IslandShell: View {
                                   topInset: radii.inverted)
                 }
             }
+    }
+
+    /// 岛体 + 外沿三层。参数与来历见 `IslandTheme` 的「岛的外沿」。
+    ///
+    /// **两条线都用 `stroke` 描在轮廓上，靠线宽的一半落在里、一半落在外。**
+    /// `NotchShape` 不是 `InsettableShape`，没有 `strokeBorder`；而给它加一个
+    /// 内缩参数并不是把三个半径各减去一个数就完事 —— 上沿那两段内凹圆弧是
+    /// 向外凸的，轮廓往里缩的时候它的半径要**变大**。为一条 0.5pt 的线去写
+    /// 那套偏移几何不值当，描在轮廓上再裁一刀是等价的。
+    private var edges: some View {
+        let shape = NotchShape(bottomRadius: radii.bottom, invertedRadius: radii.inverted)
+        return shape
+            .fill(.black)
+            .overlay {
+                // 悬停只做轻微提亮，不展开、不预览（spec 3.1）。
+                shape.fill(model.isHovering && model.state != .expanded
+                           ? IslandTheme.hoverTint : Color.clear)
+            }
+            // 黑线：线宽取两倍，里外各一半。落在里面那半压在纯黑岛体上看不出来，
+            // 露在外面的正好是要的 0.5pt。
+            .overlay {
+                shape.stroke(IslandTheme.edgeLine,
+                             lineWidth: IslandTheme.edgeLineWidth * 2)
+            }
+            // 亮线：同样取两倍线宽，再按轮廓裁掉外面那一半，只剩内侧 1pt。
+            // 它盖住黑线内侧那一半 —— 从里往外于是正好是 1pt 白、0.5pt 黑。
+            // **顺序不能反**：先描亮线的话，黑线会把它压掉一半，剩 0.5pt。
+            .overlay {
+                shape.stroke(IslandTheme.edgeHighlight,
+                             lineWidth: IslandTheme.edgeHighlightWidth * 2)
+                    .clipShape(shape)
+            }
+            .shadow(color: IslandTheme.edgeShadow,
+                    radius: IslandTheme.edgeShadowRadius,
+                    y: IslandTheme.edgeShadowOffsetY)
     }
 
     /// 内容区下面要不要自己留黑边。

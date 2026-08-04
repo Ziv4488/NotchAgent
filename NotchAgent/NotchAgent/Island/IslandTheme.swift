@@ -62,6 +62,34 @@ enum IslandTheme {
     /// 悬停时整块岛的轻微提亮（spec 3.1：只做高亮，不展开）。
     static let hoverTint = Color.white.opacity(0.05)
 
+    // MARK: - 岛的外沿
+
+    /// 岛的外沿是三层，**量自用户给的 macOS 26 系统窗口截图**（@2x，2026-08-04）。
+    ///
+    /// 从里往外：
+    ///
+    /// | 层 | 截图里 | 换算 |
+    /// |---|---|---|
+    /// | 窗口底色 | `(41,44,51)` | 那是他们终端的主题色，不是系统给的 |
+    /// | 亮线 | 2px `(84,86,92)` | **1pt 白色 20%** —— 三个通道各自算出 0.201/0.199/0.201 |
+    /// | 黑线 | 1px `(1,3,4)` | **0.5pt 近乎纯黑** |
+    /// | 阴影 | 侧面往外 54px 化完，贴边处把壁纸压暗 35% | **约 27pt，峰值黑 0.7**（贴边处是峰值的一半） |
+    ///
+    /// **这三层之前上过又拿掉，当时的理由是「岛是纯黑的，描边读起来是灰框
+    /// 不是高光」——那次栽在只上了描边。** 亮线之所以是高光，靠的是它外面
+    /// 还有一条黑线把它和阴影隔开；黑线内侧挨着的是亮线而不是岛体，所以
+    /// 岛体是不是纯黑并不影响它显不显。三层必须一起上，缺一样就退回灰框。
+    static let edgeHighlight = Color.white.opacity(0.20)
+    /// 亮线画在轮廓**内侧**，这是它露出来的宽度。
+    static let edgeHighlightWidth: CGFloat = 1
+    static let edgeLine = Color.black
+    /// 黑线画在轮廓**外侧**，这是它露出来的宽度。
+    static let edgeLineWidth: CGFloat = 0.5
+    static let edgeShadow = Color.black.opacity(0.70)
+    static let edgeShadowRadius: CGFloat = 18
+    /// 阴影往下偏：截图里左右两侧 27pt 就化干净了，底下到裁切边都没化完。
+    static let edgeShadowOffsetY: CGFloat = 6
+
     // 字号
     static let bandFont = Font.system(size: 11, weight: .medium)
     /// 同一个字体的 AppKit 形态。状态带的文案要**先量宽度再截断**

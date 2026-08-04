@@ -222,13 +222,13 @@ struct IslandMetricsTests {
 
     // MARK: - 圆角
 
-    @Test("有刘海：底部 12、内凹 8，四态一致")
+    @Test("有刘海：底部 16、内凹 8，四态一致")
     func radiiOnNotchedScreens() {
         for geometry in [FakeScreenGeometry.macBook14, .macBook16] {
             let metrics = IslandMetrics(geometry: geometry)
             for state in IslandState.allCases {
                 let radii = metrics.cornerRadii(for: state)
-                #expect(radii.bottom == 12)
+                #expect(radii.bottom == 16)
                 #expect(radii.inverted == 8)
             }
         }
@@ -240,7 +240,7 @@ struct IslandMetricsTests {
             let metrics = IslandMetrics(geometry: geometry)
             for state in IslandState.allCases {
                 #expect(metrics.cornerRadii(for: state).inverted == 0)
-                #expect(metrics.cornerRadii(for: state).bottom == 12)
+                #expect(metrics.cornerRadii(for: state).bottom == 16)
             }
         }
     }

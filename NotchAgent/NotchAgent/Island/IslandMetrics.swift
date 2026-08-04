@@ -36,7 +36,15 @@ struct IslandConstants: Equatable, Sendable {
     var fallbackNotchWidth: CGFloat = 200
 
     /// 底部圆角半径。
-    var bottomCornerRadius: CGFloat = 12
+    ///
+    /// **16 是量出来的，不是挑的。** 用户 2026-08-04 给了一张 macOS 26 系统窗口的
+    /// 截图（@2x），拿 SwiftUI 自己的 `RoundedRectangle(cornerRadius:style:.continuous)`
+    /// 路径去套那条轮廓，16pt 时残差 0.8pt（在抗锯齿噪声里），12pt 和 20pt 都差着
+    /// 好几个像素。16 也正是 macOS 26 的系统窗口圆角。
+    ///
+    /// 卡片的圆角跟着它走（`PanelCard.cardRadius` = 这个 − 7pt 内缩），改这里
+    /// 卡片自己会跟上，两条弧继续同心。
+    var bottomCornerRadius: CGFloat = 16
     /// 上沿两侧内凹拐角半径。无刘海时强制为 0。
     var invertedCornerRadius: CGFloat = 8
 

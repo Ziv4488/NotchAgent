@@ -64,13 +64,37 @@ struct IslandPixelTests {
             return neutral && gray(x, y) > 0.055 && gray(x, y) < 0.40
         }
 
-        /// 从左往右第一个不是底色的像素 —— 也就是岛的左边界。
-        func firstNonBackdrop(row y: Int) -> Int? {
-            (0..<width).first { !isBackdrop($0, y) }
+        /// 岛自己（岛体、外沿那两条线、卡片）—— **不含阴影**。
+        ///
+        /// 岛外面挂了一圈阴影之后，「不是底色」不再等于「是岛」：贴着岛的那一圈
+        /// 品红被压暗了，照样不是底色。
+        ///
+        /// **只能按绿色分。** 品红是 `(v, 0, v)`，红蓝相等 —— 拿「中性」或者
+        /// 「够暗」去判，被阴影压到三成的品红一样能混进来。绿色是它唯一始终为 0
+        /// 的通道，而岛这边（纯黑、亮线、卡片）三通道一律相等。
+        func isIsland(_ x: Int, _ y: Int) -> Bool {
+            let c = color(x, y)
+            return abs(c.redComponent - c.greenComponent) < 0.12
+                && abs(c.greenComponent - c.blueComponent) < 0.12
         }
 
-        func firstCard(row y: Int) -> Int? {
-            (0..<width).first { isCard($0, y) }
+        /// 从左往右第一个属于岛的像素 —— 也就是岛的左边界。
+        func firstIsland(row y: Int) -> Int? {
+            (0..<width).first { isIsland($0, y) }
+        }
+
+        /// 品红被压暗了多少 —— 阴影的浓度。底色的红是满的，压暗多少就是多少。
+        func darkening(_ x: Int, _ y: Int) -> CGFloat {
+            1 - color(x, y).redComponent
+        }
+
+        /// 从 `x0` 往右第一个卡片像素。
+        ///
+        /// **`x0` 不能是 0。** 岛的外沿那条亮线是白 20% 叠在纯黑上 = 灰度 0.2，
+        /// 中性、又落在 `isCard` 那档灰里 —— 从最左边扫的话第一个"卡片像素"
+        /// 会是岛自己的边，量出来的黑边宽度恒等于 0。调用方要跳过外沿那几 pt。
+        func firstCard(row y: Int, from x0: Int = 0) -> Int? {
+            (max(0, x0)..<width).first { isCard($0, y) }
         }
 
         func lastCard(row y: Int) -> Int? {
@@ -85,8 +109,12 @@ struct IslandPixelTests {
     /// 量一张白图会得出「什么都对」的假绿。`ImageRenderer` 是 SwiftUI 自己的
     /// 光栅化入口，确定性也更好（`scale = 1`，一个点就是一个像素，
     /// 断言里的 7 和 8 就是 pt）。
+    ///
+    /// `scale` 只在量**亚像素**的东西时才抬到 2：外沿那条黑线只有 0.5pt，
+    /// scale 1 下它连一个像素都占不满，量到的永远是它和底色掺出来的中间值。
     private func raster(_ view: some View, size: CGSize,
-                        backdrop: Color = IslandPixelTests.backdrop) throws -> Raster {
+                        backdrop: Color = IslandPixelTests.backdrop,
+                        scale: CGFloat = 1) throws -> Raster {
         let root = ZStack(alignment: .top) {
             backdrop
             view
@@ -94,7 +122,7 @@ struct IslandPixelTests {
         .frame(width: size.width, height: size.height)
 
         let renderer = ImageRenderer(content: root)
-        renderer.scale = 1
+        renderer.scale = scale
         let cg = try #require(renderer.cgImage, "渲不出图，后面所有断言都没有意义")
 
         // **不能直接 `NSBitmapImageRep(cgImage:)`。** `ImageRenderer` 交出来的
@@ -211,9 +239,11 @@ struct IslandPixelTests {
         let image = try raster(IslandShell(model: model), size: canvas(around: model))
 
         let column = cleanColumn(image)
-        let islandBottom = try #require((0..<image.height).last { !image.isBackdrop(column, $0) },
-                                        "整张图都是底色 —— 岛没画出来")
-        let fillBottom = try #require((0..<image.height).last { image.isCard(column, $0) })
+        // **下沿从 `model.size` 算，不从像素找。** 岛外面挂着阴影，「最后一个不是
+        // 底色的像素」会落在阴影里、跟着阴影一起下移 —— 那正是这条测试当年栽过的坑。
+        let islandBottom = Int(model.size.height) - 1
+        // 往上让开 2pt：岛的外沿那条亮线灰度 0.2，`isCard` 也认它（见 `firstCard`）。
+        let fillBottom = try #require((0..<(islandBottom - 1)).last { image.isCard(column, $0) })
         #expect(abs(CGFloat(islandBottom - fillBottom) - Self.expectedBottomMargin) <= 1,
                 "岛的下边框量出来是 \(islandBottom - fillBottom)pt，该是 8")
     }
@@ -232,16 +262,20 @@ struct IslandPixelTests {
         let image = try raster(IslandShell(model: model), size: canvas(around: model))
 
         let column = cleanColumn(image)
-        let islandBottom = try #require((0..<image.height).last { !image.isBackdrop(column, $0) })
-        let fillBottom = try #require((0..<image.height).last { image.isCard(column, $0) })
+        let islandBottom = Int(model.size.height) - 1
+        let fillBottom = try #require((0..<(islandBottom - 1)).last { image.isCard(column, $0) })
 
         // 只看两条弧**同时存在**的那几行：卡片的弧从它自己的下沿往上一个
         // `cardRadius`，岛的弧从岛的下沿往上一个 `bottomCornerRadius`。
+        //
+        // 岛的左边界用 `firstIsland` 找，**不是 `firstNonBackdrop`** ——
+        // 岛外面那圈阴影也不是底色，拿它当边界量出来的黑边会宽出一大截。
         var gaps: [Int] = []
         for y in (fillBottom - Int(PanelCard.cardRadius))...fillBottom {
             guard y >= 0,
-                  let islandLeft = image.firstNonBackdrop(row: y),
-                  let cardLeft = image.firstCard(row: y) else { continue }
+                  let islandLeft = image.firstIsland(row: y),
+                  // 让开外沿那 2pt，否则第一个"卡片像素"是岛自己的亮线。
+                  let cardLeft = image.firstCard(row: y, from: islandLeft + 2) else { continue }
             gaps.append(cardLeft - islandLeft)
         }
 
@@ -256,43 +290,72 @@ struct IslandPixelTests {
         #expect(high <= 11, "转角处黑边最宽 \(high)pt —— 两条弧不是一套的")
     }
 
-    // MARK: - §1.1 / 1.7：岛外面什么都没有
+    // MARK: - §1.1 / 1.7：岛的外沿是三层
 
-    /// 岛的边缘和桌面之间是**硬边界**。
+    /// 岛的外沿从里往外必须是**亮线 → 黑线 → 阴影**三层，一层不少、也不越界。
     ///
-    /// 曾经有一圈 12pt 的投影：落在这块透明画布上是洗不掉的黑雾，
-    /// 把窗口挪到岛正后方就能看见一圈渐变暗环（§1.7）。这条量的是
-    /// 岛外面 3–20pt 那一圈**一个像素都没被动过**。
+    /// 参数与来历见 `IslandTheme` 的「岛的外沿」，量自 macOS 26 系统窗口截图。
+    /// 这条钉三件事：
+    ///
+    /// 1. 轮廓**内侧** 1pt 是白 20%（叠在纯黑岛体上 = 灰度 0.2）
+    /// 2. 轮廓**外侧** 0.5pt 是黑 —— 少了它，那条亮线读起来就是灰框不是高光，
+    ///    这正是前一版描边被拿掉的原因
+    /// 3. 再往外是阴影：贴边处底色明显被压暗，**并且 30pt 之外化得干净** ——
+    ///    上一版投影栽的是后半句，一圈洗不掉的黑雾铺满了整块透明画布（§1.7）
     ///
     /// **边界从 `model.size` 算，不从像素找。** 第一版是「从底下往上找第一个
     /// 不是底色的像素」当作岛的下沿 —— 挂上投影之后那个位置跟着投影一起下移，
     /// 检查的带子也跟着走，于是测试照样绿。要查的东西自己会移动检查的地方，
     /// 这种度量一律不能用。岛的尺寸是已知的，直接拿。
-    @Test("岛外面没有描边，也没有一圈黑雾", arguments: [IslandState.idle, .running, .expanded])
-    func nothingBleedsOutsideTheIsland(state: IslandState) throws {
+    @Test("岛的外沿是三层：内亮线、外黑线、再往外阴影化得开",
+          arguments: [IslandState.idle, .running, .expanded])
+    func islandHasThreeEdgeLayers(state: IslandState) throws {
         let model = IslandModel.previewModel(state: state)
         let size = canvas(around: model)
-        let image = try raster(IslandShell(model: model), size: size)
+        // 黑线只有 0.5pt，scale 1 下占不满一个像素 —— 必须渲成 2 倍再量。
+        let px = 2
+        let image = try raster(IslandShell(model: model), size: size, scale: CGFloat(px))
 
         // 岛贴着画布顶边、水平居中；两侧的内凹圆弧画在主体之外。
+        // 竖直中段取的是直边，不受两个下角的圆弧影响。
         let islandBottom = Int(model.size.height) - 1
-        let bodyLeft = Int((size.width - model.size.width) / 2)
-        let outerLeft = bodyLeft - Int(model.cornerRadii.inverted)
+        let bodyLeft = Int((size.width - model.size.width) / 2) * px
+        let row = islandBottom / 2 * px
 
-        // 下沿往下 3pt 起、20pt 止的一整条带子。
-        var dirty = 0
-        for y in (islandBottom + 3)..<min(image.height, islandBottom + 20) {
-            for x in 0..<image.width where !image.isBackdrop(x, y) { dirty += 1 }
+        // 内侧 1pt = 2 像素：白 20% 叠在纯黑岛体上，正好是灰度 0.2。
+        for step in 0..<px {
+            let gray = image.gray(bodyLeft + step, row)
+            #expect(abs(gray - 0.2) < 0.04,
+                    "轮廓往里第 \(step) 个像素该是白 20% 的亮线，量到灰度 \(gray)")
         }
-        #expect(dirty == 0, "岛下沿外面有 \(dirty) 个像素不是底色 —— 投影又回来了")
+        // 再往里就是岛体，纯黑。
+        #expect(image.gray(bodyLeft + px * 2, row) < 0.05, "亮线不该糊进岛体里")
 
-        // 侧边同理：取岛竖直方向的中段，往左看一条。
-        let probeRow = islandBottom / 2
-        var sideDirty = 0
-        for x in max(0, outerLeft - 20)..<max(0, outerLeft) where !image.isBackdrop(x, probeRow) {
-            sideDirty += 1
+        // 外侧 0.5pt = 1 像素：不透明的黑。
+        #expect(image.gray(bodyLeft - 1, row) < 0.08,
+                "轮廓外侧该有一条黑线，量到灰度 \(image.gray(bodyLeft - 1, row))")
+
+        // 阴影：贴边处底色被压暗，再往外化干净。
+        // **不能用 `isBackdrop` 判**：它只认「红蓝都高于 0.85」，阴影把品红压暗
+        // 一成的地方照样算底色，于是「有没有阴影」这半句根本不会红。看压暗量。
+        // 贴边这一下量**下面**：阴影往下偏 6pt，岛的上半截侧面本来就淡
+        // （idle 只有一条菜单栏那么高，整块岛都在"上半截"里）。
+        let near = image.darkening(image.width / 2, (islandBottom + 4) * px)
+        #expect(near > 0.25, "贴着岛下沿的外面该有阴影，那儿只压暗了 \(near)")
+
+        let outerLeft = bodyLeft - Int(model.cornerRadii.inverted) * px
+        let far = image.darkening(outerLeft - 45 * px, row)
+        #expect(far < 0.03, "岛左边 45pt 之外还压暗着 \(far) —— 阴影没化开")
+
+        // 阴影往下偏 6pt，所以下面这条量得比侧面远。
+        var bottomHaze: CGFloat = 0
+        for y in ((islandBottom + 55) * px)..<min(image.height, (islandBottom + 70) * px) {
+            for x in stride(from: 0, to: image.width, by: px) {
+                bottomHaze = max(bottomHaze, image.darkening(x, y))
+            }
         }
-        #expect(sideDirty == 0, "岛左边有 \(sideDirty) 个像素不是底色")
+        #expect(bottomHaze < 0.03,
+                "岛下沿 55pt 之外还压暗着 \(bottomHaze) —— 黑雾又回来了")
     }
 
     // MARK: - §6.3：文字不许压到刘海底下
@@ -512,8 +575,10 @@ struct IslandPixelTests {
 
         // 轮廓一点不动：两张图里岛的边界必须落在同一列。
         let row = 20
-        let plainLeft = try #require(plain.firstNonBackdrop(row: row))
-        let litLeft = try #require(lit.firstNonBackdrop(row: row))
+        // 用 `firstIsland` 而不是「第一个不是底色的像素」——
+        // 后者现在会先撞上岛外那圈阴影，量的就不是轮廓了。
+        let plainLeft = try #require(plain.firstIsland(row: row))
+        let litLeft = try #require(lit.firstIsland(row: row))
         #expect(plainLeft == litLeft, "悬停把岛的形状也改了")
     }
 
