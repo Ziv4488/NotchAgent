@@ -17,6 +17,10 @@ struct TabStrip: View {
     /// 正在被拖的那个 tab，以及它此刻相对本来位置的位移。
     @State private var draggingID: UUID?
     @State private var dragOffset: CGFloat = 0
+    /// 手还按着没松。**和 `draggingID` 不是一回事** —— 松手之后芯片要滑回去，
+    /// 那一段 `draggingID` 还留着（不然它会当场掉到邻居底下，见 `zIndex`），
+    /// 但手已经不在了，动画该开。
+    @State private var handIsDown = false
     /// 已经被「换过位」消化掉的那部分位移。见 `drag(_:)`。
     @State private var dragConsumed: CGFloat = 0
     /// 上一次点在哪个 tab 上、什么时候。双击靠它自己数（见 `tapped(_:)`）。
@@ -54,6 +58,7 @@ struct TabStrip: View {
                 TabChip(tab: tab,
                         isSelected: tab.id == model.selectedTab?.id,
                         isEditing: editingTabID == tab.id,
+                        backing: draggingID == tab.id ? chipBacking : nil,
                         onCommit: { newTitle in
                             model.renameTab(tab.id, to: newTitle)
                             editingTabID = nil
@@ -76,6 +81,14 @@ struct TabStrip: View {
                     .offset(x: draggingID == tab.id ? dragOffset : 0)
                     // 被拖的那个要压在别人上面，否则挪过去的一路上会被邻居切掉一半。
                     .zIndex(draggingID == tab.id ? 1 : 0)
+                    // **手底下那个不许有动画。** 换位时邻居要滑，是靠 `moveTab`
+                    // 外面那圈 `withAnimation`；可那一下同时也把被拖的芯片挪了
+                    // 一整格（它在 HStack 里换了槽位），那个位移要是也插值，
+                    // 芯片就会从手底下滑走、再慢慢追回来 —— 正是「不跟手」。
+                    // 位移补偿（`dragConsumed`）是瞬时的，槽位也必须瞬时。
+                    .transaction { txn in
+                        if handIsDown, draggingID == tab.id { txn.animation = nil }
+                    }
                     .gesture(drag(tab))
                     // 给 ScrollViewReader 认的。用 tab 自己的 id，
                     // 和 `selectedTabID` 是同一个东西，滚过去不用再翻译一次。
@@ -154,40 +167,69 @@ struct TabStrip: View {
         DragGesture(minimumDistance: Layout.dragThreshold, coordinateSpace: .global)
             .onChanged { value in
                 draggingID = tab.id
+                handIsDown = true
                 var offset = value.translation.width - dragConsumed
                 guard let index = model.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
 
                 if offset > 0, index + 1 < model.tabs.count {
                     let step = Self.chipWidth(for: model.tabs[index + 1]) + Layout.tabGap
                     if offset > step * Layout.swapThreshold {
-                        model.moveTab(from: index, to: index + 1)
+                        // **先把位移落定，再换位。** 换位那句在 `withAnimation` 里，
+                        // 写在它后面的状态改动会被卷进同一个事务、跟着一起插值。
+                        dragOffset = offset - step
                         dragConsumed += step
-                        offset -= step
+                        withAnimation(IslandTheme.tabSlide) { model.moveTab(from: index, to: index + 1) }
+                        return
                     }
                 } else if offset < 0, index > 0 {
                     let step = Self.chipWidth(for: model.tabs[index - 1]) + Layout.tabGap
                     if -offset > step * Layout.swapThreshold {
-                        model.moveTab(from: index, to: index - 1)
+                        dragOffset = offset + step
                         dragConsumed -= step
-                        offset += step
+                        withAnimation(IslandTheme.tabSlide) { model.moveTab(from: index, to: index - 1) }
+                        return
                     }
                 }
                 dragOffset = offset
             }
             .onEnded { _ in
-                draggingID = nil
-                dragOffset = 0
+                // 手先松开（这一下把上面那条 `.transaction` 的封印解掉），
+                // 芯片再滑回槽位里。`draggingID` 留到动画放完才清 ——
+                // 提前清掉它 `zIndex` 当场掉到 0，归位的一路上会被邻居压住。
+                handIsDown = false
                 dragConsumed = 0
+                withAnimation(IslandTheme.tabSlide) {
+                    dragOffset = 0
+                } completion: {
+                    draggingID = nil
+                }
                 // 顺序是用户排的，重启后得还是这个顺序。
                 model.persistTabs()
             }
     }
+
+    /// 拖动中的芯片垫在底下的那层不透明底色。
+    ///
+    /// 芯片本来只有选中时才有背景，而且是**半透明**的白 11% —— 于是拖过邻居
+    /// 时两边的字直接叠在一起（用户 08-04 报的「tab 之间的内容有穿插」）。
+    /// 没选中的那个更糟：整块全透。
+    ///
+    /// 垫的这层要和芯片**底下那块岛体一模一样**，不然芯片会显出一块深色补丁：
+    /// 岛体是纯黑，但收起态悬停时整块岛叠着一层白 5%（`hoverTint`），
+    /// 叠出来是 `white: 0.05`。展开态没有那层提亮。
+    private var chipBacking: Color {
+        Color(white: model.isHovering && model.state != .expanded ? 0.05 : 0)
+    }
 }
 
-private struct TabChip: View {
+/// 不是 `private`：`TabStripPixelTests` 要单独渲一个拖动中的芯片，
+/// 量它到底透不透光。
+struct TabChip: View {
     let tab: IslandTab
     let isSelected: Bool
     var isEditing = false
+    /// 拖动中垫在底下的不透明底色；不在拖动中就是 nil（见 `TabStrip.chipBacking`）。
+    var backing: Color?
     var onCommit: (String) -> Void = { _ in }
     var onCancel: () -> Void = {}
     var onClose: () -> Void = {}
@@ -212,13 +254,20 @@ private struct TabChip: View {
         .padding(.horizontal, TabStrip.Layout.chipHPadding)
         .padding(.vertical, TabStrip.Layout.chipVPadding)
         .background {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(IslandTheme.tabActiveFill)
-                    .overlay(alignment: .top) {
-                        Rectangle().fill(Color.white.opacity(0.13)).frame(height: 0.5)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            ZStack {
+                // 拖动中先垫一层不透明的。颜色和芯片底下那块岛体相同，
+                // 所以看不出多了一层，但邻居的字透不过来了。
+                if let backing {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(backing)
+                }
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(IslandTheme.tabActiveFill)
+                        .overlay(alignment: .top) {
+                            Rectangle().fill(Color.white.opacity(0.13)).frame(height: 0.5)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
             }
         }
         .contentShape(Rectangle())

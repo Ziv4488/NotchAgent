@@ -582,5 +582,42 @@ struct IslandPixelTests {
         #expect(plainLeft == litLeft, "悬停把岛的形状也改了")
     }
 
+    // MARK: - §13.13：拖动中的 tab 芯片不透光
+
+    /// 拖着一个 tab 走的时候，它**不能**是半透明的。
+    ///
+    /// 芯片本来只有选中时才有背景、而且是白 11% 的半透明；拖过邻居时两边的字
+    /// 直接叠在一起（用户 08-04 报的「tab 之间的内容有穿插」）。没选中的那个
+    /// 更彻底 —— 整块全透，拖起来就是一行字在另一行字上面走。
+    ///
+    /// 量法：把芯片渲在品红上，数芯片框里还剩多少品红。垫上不透明底之后是 0。
+    /// 同一张图里顺带量了**没垫**的那一版 —— 它必须漏，不漏说明这条测的不是
+    /// 这件事（比如芯片自己长了个不透明背景，那这条测试就白写了）。
+    @Test("拖动中的 tab 芯片不透光")
+    func draggedChipDoesNotLetTheBackdropThrough() throws {
+        let tab = IslandTab(title: "写测试", kind: .cli, status: .running, accent: .orange)
+        // 画布正好是芯片渲染出来的大小 —— 大了的话四周那圈空白也是品红，
+        // 数出来的漏光就不是芯片的了。
+        let size = CGSize(width: TabStrip.chipWidth(for: tab),
+                          height: TabStrip.Layout.stripHeight)
+
+        func magentaCount(backing: Color?) throws -> Int {
+            let image = try raster(TabChip(tab: tab, isSelected: false, backing: backing),
+                                   size: size)
+            // 芯片顶在画布上沿、水平居中。四边各让开 3pt 躲开圆角的抗锯齿，
+            // 下面让开的是芯片本身没占满的那几 pt（它比 stripHeight 矮一点）。
+            var count = 0
+            let chipHeight = TabStrip.Layout.chipVPadding * 2 + TabStrip.Layout.iconSize
+            for y in 3..<(Int(chipHeight) - 3) {
+                for x in 3..<(image.width - 3) where image.isBackdrop(x, y) { count += 1 }
+            }
+            return count
+        }
+
+        #expect(try magentaCount(backing: .black) == 0, "垫了不透明底，芯片还在漏光")
+        #expect(try magentaCount(backing: nil) > 0,
+                "没垫底的芯片居然也不漏 —— 那这条测的就不是「垫底」这件事")
+    }
+
 
 }

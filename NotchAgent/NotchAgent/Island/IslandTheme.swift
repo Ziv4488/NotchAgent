@@ -102,4 +102,11 @@ enum IslandTheme {
 
     /// 状态切换的动画。宽、高、圆角同时插值。
     static let morph = Animation.spring(response: 0.38, dampingFraction: 0.78)
+
+    /// tab 换位时邻居让开、松手时芯片归位。
+    ///
+    /// 比 `morph` 快一档：那个是整块岛变形，这个是一个芯片挪一格，
+    /// 用 0.38 秒的簧会让人觉得列表在拖泥带水。阻尼给到 0.86 是不要回弹 ——
+    /// tab 的位置是用户刚排的，弹一下像是没排准。
+    static let tabSlide = Animation.spring(response: 0.24, dampingFraction: 0.86)
 }
