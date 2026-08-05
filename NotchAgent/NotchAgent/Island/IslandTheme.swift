@@ -42,14 +42,19 @@ enum IslandTheme {
     /// 取值来自用户给的那张截图里占了 88 万像素的底色。
     /// 这里不能再写成半透明白叠在岛上 —— 那样算出来是 #0B0B0B，还是黑。
     ///
-    /// 第 4 阶段的「终端配色与字体主题」会把它变成可配置项的**默认值**。
-    static let panelFill = Color(red: 30 / 255, green: 30 / 255, blue: 30 / 255)
+    /// **2026-08-05（4.3）起这是「默认主题」的背景色，不再是唯一的底色。**
+    /// 画在屏幕上的那块底由 `ThemeStore.shared.theme.background` 决定（见 `PanelCard`）；
+    /// 这里留的是没选过主题时的那一档。岛体不受影响，仍是纯黑。
+    static var panelFill: Color { TerminalTheme.notchDefault.background.swiftUIColor }
     static let panelStroke = Color.white.opacity(0.07)
 
-    // 终端。这三项是第 4 阶段「终端配色与字体主题」的默认值，
-    // 放在这里是为了能被测到（对比度、和 panelFill 的关系），别散回视图里。
-    static let terminalForeground = NSColor(white: 0.92, alpha: 1)
-    static let terminalCaret = NSColor(red: 0.85, green: 0.47, blue: 0.34, alpha: 1)
+    // 终端。这三项是「终端配色与字体主题」的默认值，放在这里是为了能被测到
+    // （对比度、和 panelFill 的关系），别散回视图里。
+    //
+    // 4.3 起前三项的实际值住在 `TerminalTheme.notchDefault` 里 —— 一份主题该是
+    // 一个整体，前景背景分居两处的话，改了一处忘了另一处就是对比度悄悄塌掉。
+    static var terminalForeground: NSColor { TerminalTheme.notchDefault.foreground.nsColor }
+    static var terminalCaret: NSColor { TerminalTheme.notchDefault.cursor.nsColor }
     /// 终端字号。**12 不是拍脑袋**：用户给了一张「就要这么大」的截图，
     /// 量出来的等宽格宽 7.5pt、汉字墨高 11.5pt；岛上原来 11pt 是 7.1 / 10.0。
     /// 两个比值分别指向 11.6 和 12.6，取中。

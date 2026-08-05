@@ -22,6 +22,11 @@ struct NewTaskForm: View {
     @State private var instruction = ""
     @FocusState private var instructionFocused: Bool
 
+    /// 这张表单画在内容区那张卡片上，而卡片的底 2026-08-05 起是主题色。
+    /// 所以文字与描边一律走主题的墨色，**不写死白色** —— 选了浅色主题
+    /// （One Light 的底是 `#FAFAFA`）之后白字会淡到看不见。
+    private var theme: TerminalTheme { ThemeStore.shared.theme }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if projects.isEmpty {
@@ -46,7 +51,7 @@ struct NewTaskForm: View {
                 .padding(.top, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Divider().overlay(IslandTheme.panelStroke)
+            Divider().overlay(theme.surfaceStroke)
             instructionField
         }
         .background { PanelCard() }
@@ -80,7 +85,7 @@ struct NewTaskForm: View {
     private var empty: some View {
         Text("~/.claude/projects 里还没有项目。用下面那行挑一个目录。")
             .font(IslandTheme.bodyFont)
-            .foregroundStyle(IslandTheme.faint)
+            .foregroundStyle(theme.onSurfaceFaint)
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -104,14 +109,14 @@ struct NewTaskForm: View {
             HStack(spacing: 7) {
                 Image(systemName: "folder")
                     .font(.system(size: 10))
-                    .foregroundStyle(IslandTheme.faint)
+                    .foregroundStyle(theme.onSurfaceFaint)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(project.name)
                         .font(IslandTheme.tabFont)
-                        .foregroundStyle(IslandTheme.bright)
+                        .foregroundStyle(theme.onSurfaceBright)
                     Text(project.displayPath)
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(IslandTheme.faint)
+                        .foregroundStyle(theme.onSurfaceFaint)
                         .lineLimit(1)
                         .truncationMode(.head)
                 }
@@ -119,14 +124,14 @@ struct NewTaskForm: View {
                 if project.hasSessions {
                     Text("可继续")
                         .font(.system(size: 9))
-                        .foregroundStyle(IslandTheme.faint)
+                        .foregroundStyle(theme.onSurfaceFaint)
                 }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(selected == project ? IslandTheme.tabActiveFill : Color.clear)
+                    .fill(selected == project ? theme.controlFill : Color.clear)
             }
             .contentShape(Rectangle())
         }
@@ -152,18 +157,18 @@ struct NewTaskForm: View {
                 if let chosen = chosenOutsideList {
                     Text(chosen.displayPath)
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(IslandTheme.faint)
+                        .foregroundStyle(theme.onSurfaceFaint)
                         .lineLimit(1)
                         .truncationMode(.head)
                 }
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(chosenOutsideList == nil ? IslandTheme.dim : IslandTheme.bright)
+            .foregroundStyle(chosenOutsideList == nil ? theme.onSurfaceDim : theme.onSurfaceBright)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(chosenOutsideList == nil ? Color.clear : IslandTheme.tabActiveFill)
+                    .fill(chosenOutsideList == nil ? Color.clear : theme.controlFill)
             }
             .contentShape(Rectangle())
         }
@@ -176,23 +181,23 @@ struct NewTaskForm: View {
         HStack(spacing: 7) {
             Image(systemName: "chevron.right")
                 .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(IslandTheme.faint)
+                .foregroundStyle(theme.onSurfaceFaint)
             TextField(selected == nil ? "先选一个目录" : "给 \(selected!.name) 下达指令…",
                       text: $instruction)
                 .textFieldStyle(.plain)
                 .font(IslandTheme.inputFont)
-                .foregroundStyle(IslandTheme.bright)
+                .foregroundStyle(theme.onSurfaceBright)
                 .focused($instructionFocused)
                 .disabled(selected == nil)
                 .onSubmit(submit)
             Button(action: submit) {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.8))
+                    .foregroundStyle(theme.controlLabel)
                     .frame(width: 18, height: 18)
                     .background {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color.white.opacity(0.16))
+                            .fill(theme.controlFill)
                     }
             }
             .buttonStyle(.plain)

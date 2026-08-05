@@ -162,6 +162,22 @@ final class SessionRuntime {
         store.remove(id)
     }
 
+    /// 换主题 / 换字体之后，把**已经活着的**终端全部重装一遍。
+    ///
+    /// 新建的终端在 `TerminalPane.style` 那儿自己会拿到当前主题；这里管的是
+    /// 已经跑着的那些。少了这一下，换主题只对下一个 tab 生效 —— 用户会以为没换成。
+    ///
+    /// 换字体会改变字符格宽，PTY 的列数得跟着重算，否则 Claude Code 还按旧列数折行。
+    /// **这一步不用我们做**：SwiftTerm 的 `font` setter 会走 `resetFont()` →
+    /// 按新格宽算出 `newCols`/`newRows` → `resize(cols:rows:)` → `sizeChanged`，
+    /// 最后一环就是把新尺寸写给 PTY（查证于 `AppleTerminalView.resetFont`
+    /// 与 `MacTerminalView.font` 的 setter）。
+    func restyleTerminals() {
+        for session in store.sessions.values {
+            ThemeStore.shared.apply(to: session.terminalView)
+        }
+    }
+
     var hasLiveSessions: Bool { store.runningCount > 0 }
 
     // MARK: - 盯着终端上的选择题

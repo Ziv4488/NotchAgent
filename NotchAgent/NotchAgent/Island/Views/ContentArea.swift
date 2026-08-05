@@ -83,8 +83,14 @@ struct ContentArea: View {
     /// 琥珀色的警告标 + 退出码（`tab.activity` 里已经写好了，见
     /// `IslandModel.endNote`），否则用户只知道「没了」，不知道为什么没了。
     /// 两种情况下的按钮是同一个 —— 会话记录都还在 `~/.claude`，都接得回去。
+    /// 这两块卡片的墨色**跟着主题走，不写死白色**。
+    ///
+    /// 它们画在内容区那张卡片上，而卡片的底 2026-08-05 起是主题色 —— 选了浅色
+    /// 主题（One Light 的底是 `#FAFAFA`）之后，原来那套白色的各档透明度
+    /// 会淡到完全看不见。琥珀色那个警告标不用翻：深浅底上都读得出。
     private func detached(_ tab: IslandTab) -> some View {
-        panel {
+        let theme = ThemeStore.shared.theme
+        return panel {
             VStack(spacing: 10) {
                 if tab.endedAbnormally {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -93,19 +99,19 @@ struct ContentArea: View {
                 }
                 Text(tab.activity ?? "会话已结束。")
                     .font(IslandTheme.bodyFont)
-                    .foregroundStyle(tab.endedAbnormally ? IslandTheme.bright : IslandTheme.dim)
+                    .foregroundStyle(tab.endedAbnormally ? theme.onSurfaceBright : theme.onSurfaceDim)
                     .multilineTextAlignment(.center)
                 Button {
                     model.resumeTab(tab.id)
                 } label: {
                     Text(tab.endedAbnormally ? "重新启动" : "继续上次会话")
                         .font(IslandTheme.tabFont)
-                        .foregroundStyle(Color.white.opacity(0.9))
+                        .foregroundStyle(theme.controlLabel)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background {
                             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(Color.white.opacity(0.14))
+                                .fill(theme.controlFill)
                         }
                 }
                 .buttonStyle(.plain)
@@ -114,14 +120,15 @@ struct ContentArea: View {
     }
 
     private func notice(_ text: String, symbol: String) -> some View {
-        panel {
+        let theme = ThemeStore.shared.theme
+        return panel {
             VStack(spacing: 8) {
                 Image(systemName: symbol)
                     .font(.system(size: 16))
-                    .foregroundStyle(IslandTheme.faint)
+                    .foregroundStyle(theme.onSurfaceFaint)
                 Text(text)
                     .font(IslandTheme.bodyFont)
-                    .foregroundStyle(IslandTheme.dim)
+                    .foregroundStyle(theme.onSurfaceDim)
                     .multilineTextAlignment(.center)
             }
             .padding(.horizontal, 24)

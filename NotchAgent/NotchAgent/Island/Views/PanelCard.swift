@@ -41,10 +41,15 @@ struct PanelCard: View {
         max(2, IslandConstants.default.bottomCornerRadius - inset)
     }
 
+    /// 底色跟着终端主题走（plan 4.3）。
+    ///
+    /// **这块底和终端的背景色是同一样东西** —— 终端自己的背景一直是 `.clear`
+    /// （填了圆角就方），画出那块底的是这张卡片。所以换主题时变的是这里。
     var body: some View {
+        let theme = ThemeStore.shared.theme
         shape
-            .fill(IslandTheme.panelFill)
-            .overlay { shape.strokeBorder(IslandTheme.panelStroke, lineWidth: 0.5) }
+            .fill(theme.background.swiftUIColor)
+            .overlay { shape.strokeBorder(theme.surfaceStroke, lineWidth: 0.5) }
     }
 
     private var shape: RoundedRectangle {

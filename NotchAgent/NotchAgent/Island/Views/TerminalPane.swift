@@ -54,17 +54,13 @@ struct TerminalPane: NSViewRepresentable {
         host.claimFocus()
     }
 
-    /// 第 4 阶段的「终端配色与字体」会把这里换成可配置的；现在先钉死一组默认值。
+    /// 配色与字体都归 `ThemeStore`（plan 4.3）。这里只负责「新挂上来的终端也要有」
+    /// —— 换主题时给**已经活着的**那些重装一遍是 `SessionRuntime.restyleTerminals()` 的事。
     ///
-    /// 背景**故意留空**：底色由内容区那张圆角卡片（`IslandTheme.panelFill`）出，
-    /// 终端自己填不出圆角，一填四个角就方了。改底色去改 `panelFill`，别改这里。
+    /// 背景**故意留空**：底色由内容区那张圆角卡片出，终端自己填不出圆角，
+    /// 一填四个角就方了。改底色去改主题的 `background`，别改这里。
     private func style(_ terminal: LocalProcessTerminalView) {
-        terminal.nativeBackgroundColor = .clear
-        terminal.nativeForegroundColor = IslandTheme.terminalForeground
-        terminal.caretColor = IslandTheme.terminalCaret
-        terminal.font = IslandTheme.terminalFont
-        terminal.wantsLayer = true
-        terminal.layer?.backgroundColor = .clear
+        ThemeStore.shared.apply(to: terminal)
     }
 }
 

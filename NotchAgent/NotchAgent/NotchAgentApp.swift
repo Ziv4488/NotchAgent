@@ -145,8 +145,158 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
+        menu.addItem(themeMenuItem())
+        menu.addItem(fontSizeMenuItem())
+        menu.addItem(fontFamilyMenuItem())
+
+        menu.addItem(.separator())
         menu.addItem(withTitle: "退出 NotchAgent", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
+    }
+
+    /// 「终端主题 ▸」。**这一轮的入口就是这儿**（plan 4.3）：偏好设置面板（4.2）
+    /// 还没做，而状态栏菜单已经在跑；主题引擎写好了，4.2 做面板时直接复用。
+    ///
+    /// 内置三组之外，如果当前用的是导入来的主题，它也列在这儿并打勾 ——
+    /// 否则用户导入完看不到自己选中了什么，只能从颜色上猜。
+    private func themeMenuItem() -> NSMenuItem {
+        let submenu = NSMenu()
+        let current = ThemeStore.shared.theme
+
+        var listed = TerminalTheme.builtins
+        if !listed.contains(current) { listed.append(current) }
+
+        for theme in listed {
+            let item = NSMenuItem(title: theme.name, action: #selector(selectTheme(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = theme
+            item.state = theme == current ? .on : .off
+            submenu.addItem(item)
+        }
+
+        submenu.addItem(.separator())
+        submenu.addItem(withTitle: "导入配色文件…", action: #selector(importTheme), keyEquivalent: "").target = self
+
+        let root = NSMenuItem(title: "终端主题", action: nil, keyEquivalent: "")
+        root.submenu = submenu
+        return root
+    }
+
+    /// 「终端字号 ▸」。
+    ///
+    /// **和字体分成两个顶层项，不再套在「终端字体 ▸」下面。** 原来是
+    /// 终端字体 ▸ 字号 ▸ 数字，**三层**。macOS 是按屏幕上还剩多少地方决定子菜单
+    /// 往左还是往右弹的，第三层多半已经顶到屏幕边，于是它自己翻到左边去 ——
+    /// 用户 2026-08-06 报的「一个在左一个在右」就是这么来的。摊成两层之后，
+    /// 每一项都只弹一次，方向由同一个判据决定，不会一项一个方向。
+    private func fontSizeMenuItem() -> NSMenuItem {
+        let submenu = NSMenu()
+        for size in stride(from: 10.0, through: 18.0, by: 1.0) {
+            let item = NSMenuItem(title: "\(Int(size))", action: #selector(selectFontSize(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = size
+            item.state = abs(ThemeStore.shared.fontSize - size) < 0.01 ? .on : .off
+            submenu.addItem(item)
+        }
+        let root = NSMenuItem(title: "终端字号", action: nil, keyEquivalent: "")
+        root.submenu = submenu
+        return root
+    }
+
+    /// 「终端字体 ▸」。列的是 `ThemeStore.availableMonospacedFamilies()` ——
+    /// 等宽、且不是 CJK 字体（那四个 CJK 的用户 2026-08-06 点名删了，理由见那儿）。
+    private func fontFamilyMenuItem() -> NSMenuItem {
+        let submenu = NSMenu()
+        let systemItem = NSMenuItem(title: "系统等宽", action: #selector(selectFontFamily(_:)), keyEquivalent: "")
+        systemItem.target = self
+        systemItem.state = ThemeStore.shared.fontFamily == nil ? .on : .off
+        submenu.addItem(systemItem)
+        submenu.addItem(.separator())
+        for family in ThemeStore.availableMonospacedFamilies() {
+            let item = NSMenuItem(title: family, action: #selector(selectFontFamily(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = family
+            item.state = ThemeStore.shared.fontFamily == family ? .on : .off
+            submenu.addItem(item)
+        }
+        let root = NSMenuItem(title: "终端字体", action: nil, keyEquivalent: "")
+        root.submenu = submenu
+        return root
+    }
+
+    /// 主题或字体变了之后要做的两件事：装进活着的终端、重建菜单（勾要跟着走）。
+    ///
+    /// 内容区那块底不在这儿管 —— `PanelCard` 读的是 `@Observable` 的 `ThemeStore`，
+    /// SwiftUI 自己会重画。
+    private func themeDidChange() {
+        runtime.restyleTerminals()
+        statusItem?.menu = buildMenu()
+    }
+
+    @objc private func selectTheme(_ sender: NSMenuItem) {
+        guard let theme = sender.representedObject as? TerminalTheme else { return }
+        ThemeStore.shared.select(theme)
+        themeDidChange()
+    }
+
+    @objc private func selectFontSize(_ sender: NSMenuItem) {
+        guard let size = sender.representedObject as? Double else { return }
+        ThemeStore.shared.selectFontSize(CGFloat(size))
+        themeDidChange()
+    }
+
+    @objc private func selectFontFamily(_ sender: NSMenuItem) {
+        // 「系统等宽」那一项没有 representedObject，正好对应 nil。
+        ThemeStore.shared.selectFontFamily(sender.representedObject as? String)
+        themeDidChange()
+    }
+
+    /// 导入 iTerm 的 `.itermcolors` 或 Ghostty 的主题文件。
+    ///
+    /// **面板不能只按后缀过滤**：Ghostty 的主题文件是裸文件名，没有扩展名
+    /// （`~/.config/ghostty/themes/` 底下就那样放着）。所以放开所有文件，
+    /// 由 `TerminalThemeImport` 按内容判格式；判不出来再报错。
+    ///
+    /// 岛是非激活面板，弹 `NSOpenPanel` 之前得让位 —— 和关 tab 的确认框
+    /// 同一条路（`NotchWindow.steppingAside`）。
+    @objc private func importTheme() {
+        let panel = NSOpenPanel()
+        panel.title = "选择配色文件"
+        panel.message = "支持 iTerm 的 .itermcolors 与 Ghostty 的主题文件。"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = []
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = NotchWindow.steppingAside { panel.runModal() }
+        guard response == .OK, let url = panel.url else { return }
+
+        switch ThemeStore.shared.importTheme(contentsOf: url) {
+        case .success:
+            themeDidChange()
+        case .failure(let failure):
+            reportImportFailure(failure, url: url)
+        }
+    }
+
+    /// 导入失败要说清楚是**哪里**不对。只说「导入失败」的话，用户唯一的下一步
+    /// 是换个文件再试一次 —— 而多半是同一类文件，于是再失败一次。
+    private func reportImportFailure(_ failure: TerminalThemeImport.Failure, url: URL) {
+        let alert = NSAlert()
+        alert.messageText = "没能读出这份配色"
+        switch failure {
+        case .unreadable:
+            alert.informativeText = "\(url.lastPathComponent) 打不开。"
+        case .unknownFormat:
+            alert.informativeText = "\(url.lastPathComponent) 既不是 iTerm 的 .itermcolors，"
+                + "也不像 Ghostty 的主题文件。"
+        case .incomplete(let reason):
+            alert.informativeText = "\(url.lastPathComponent) 里\(reason)。"
+                + "终端要完整的 16 色 ANSI 调色板才能上色。"
+        }
+        alert.alertStyle = .warning
+        NSApp.activate(ignoringOtherApps: true)
+        _ = NotchWindow.steppingAside { alert.runModal() }
     }
 
     @objc private func newTask() { model.beginNewTask() }

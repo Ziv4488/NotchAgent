@@ -20,6 +20,10 @@ struct Preferences {
         static let expandedWidth = "expandedWidth"
         static let expandedContentHeight = "expandedContentHeight"
         static let contentHeightReclaimedUsageBar = "contentHeightReclaimedUsageBar"
+        static let terminalThemeName = "terminalThemeName"
+        static let terminalThemeCustom = "terminalThemeCustom"
+        static let terminalFontFamily = "terminalFontFamily"
+        static let terminalFontSize = "terminalFontSize"
     }
 
     /// 用量条拆掉后留在 chrome 里的那 22pt，2026-08-02 挪回了内容区
@@ -57,6 +61,61 @@ struct Preferences {
             // 刚存进去的已经是新口径了，别让下一次读再给它加一遍 22。
             defaults.set(true, forKey: Key.contentHeightReclaimedUsageBar)
         }
+    }
+
+    /// 当前终端配色。没存过时返回 nil，让调用方用默认主题。
+    ///
+    /// **内置主题只存名字，导入的才存整份。** 存名字的好处是以后改内置预设的色值时，
+    /// 已经选了它的用户跟着变；整份存下来的话那次改动对老用户是不生效的
+    /// —— 而他看到的主题名和别人的一样，却长得不一样，没有哪个是对的。
+    /// 导入来的主题没有这个问题：它本来就只存在于这台机器上。
+    var terminalTheme: TerminalTheme? {
+        get {
+            if let name = defaults.string(forKey: Key.terminalThemeName),
+               let builtin = TerminalTheme.builtin(named: name) {
+                return builtin
+            }
+            guard let data = defaults.data(forKey: Key.terminalThemeCustom),
+                  let theme = try? JSONDecoder().decode(TerminalTheme.self, from: data),
+                  theme.isValid else { return nil }
+            return theme
+        }
+        nonmutating set {
+            guard let newValue else {
+                defaults.removeObject(forKey: Key.terminalThemeName)
+                defaults.removeObject(forKey: Key.terminalThemeCustom)
+                return
+            }
+            // **比的是整份，不是名字。** 用户完全可能导入一个也叫 Dracula 的文件
+            // （`dracula.itermcolors` 存盘就叫这个名），只按名字判会把他导入的
+            // 那份直接换成我们内置的那份 —— 主题名对得上、颜色却不是他要的。
+            if TerminalTheme.builtin(named: newValue.name) == newValue {
+                defaults.set(newValue.name, forKey: Key.terminalThemeName)
+                defaults.removeObject(forKey: Key.terminalThemeCustom)
+            } else {
+                // 名字键必须清掉，否则下次读先命中内置那份。
+                defaults.removeObject(forKey: Key.terminalThemeName)
+                defaults.set(try? JSONEncoder().encode(newValue), forKey: Key.terminalThemeCustom)
+            }
+        }
+    }
+
+    /// 等宽字体族名。nil = 系统等宽。
+    var terminalFontFamily: String? {
+        get { defaults.string(forKey: Key.terminalFontFamily) }
+        nonmutating set {
+            if let newValue { defaults.set(newValue, forKey: Key.terminalFontFamily) }
+            else { defaults.removeObject(forKey: Key.terminalFontFamily) }
+        }
+    }
+
+    /// 终端字号。没存过时返回 nil。
+    var terminalFontSize: CGFloat? {
+        get {
+            let size = defaults.double(forKey: Key.terminalFontSize)
+            return size > 0 ? CGFloat(size) : nil
+        }
+        nonmutating set { defaults.set(newValue.map(Double.init) ?? 0, forKey: Key.terminalFontSize) }
     }
 }
 
