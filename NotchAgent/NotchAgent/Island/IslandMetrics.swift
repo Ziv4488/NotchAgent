@@ -175,6 +175,34 @@ struct IslandMetrics {
     ///    岛外面平白多出一条刀切的黑边（用户 2026-08-04 拖到最大宽度时报的）。
     ///
     /// **上面不留**：岛的顶边压在屏幕物理上沿，往上让出来的地方在屏幕外。
+    /// 内容区在屏幕上的位置，**原点左下**（和 `containerFrame` 同一套坐标）。
+    ///
+    /// 贴附的第三方窗口占的就是这块地方（plan 3.3）：选中 app tab 时岛只画
+    /// 状态带 + tab 条，往下这一整块让给真实窗口，看起来就像是岛的内容。
+    ///
+    /// 高度是「岛的总高减去状态带和 tab 条」，也就是 `retiredInputBarHeight`
+    /// 加上 `expandedContentHeight` —— 跟 CLI tab 的内容区**占的是同一块地方**，
+    /// 所以两种 tab 之间来回切，岛的整体轮廓不变。
+    ///
+    /// **喂给 AX 之前要翻成原点左上**，见 `AXCoordinates.topLeft`。
+    var contentRectOnScreen: CGRect {
+        let size = size(for: .expanded)
+        let chrome = geometry.menuBarHeight + constants.tabStripHeight
+        let height = size.height - chrome
+        return CGRect(x: geometry.islandCenterX - size.width / 2,
+                      y: geometry.screenTopY - size.height,
+                      width: size.width,
+                      height: height)
+    }
+
+    /// 选中 app tab 时岛自己的高度：只剩状态带 + tab 条。
+    ///
+    /// 内容区那一整块交给了真实窗口，岛不能再在上面盖一层黑
+    /// （岛体是不透明的 `.fill(.black)`，盖上去就把窗口挡没了）。
+    var chromeOnlyHeight: CGFloat {
+        geometry.menuBarHeight + constants.tabStripHeight
+    }
+
     var containerFrame: CGRect {
         let maxSize = maxExpandedSize
         let margin = IslandTheme.edgeShadowMargin
