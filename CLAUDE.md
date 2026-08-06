@@ -66,6 +66,13 @@ macOS 26 上会让 WindowServer 合成 left-mouse-down，不能用。
 - **探针只报结论，别把全表贴出来。** 比如 08-05 那次沿着边线逐点扫归属，
   三十行里有用的就一句「分界线正好压在岛的轮廓上」。要写数字就写**拐点**
   （在哪儿翻的、翻之前之后各是什么），扫描过程本身不用留
+- **AX 探针得从一个已授权的 app 宿主里跑。** 辅助功能授权按 TCC 的
+  responsible process 算：直接 exec 一个命令行工具，算的是终端（Ghostty）的账，
+  而它没授权；`/private/tmp` 底下的 .app 即便手动勾了开关也不生效。可用的做法是
+  签个 .app 放进 `~/Applications`（Personal Team 签名，重编不掉授权）、用 `open -n`
+  起、输出重定向到文件。**`AXIsProcessTrusted()` 要在探针第一行自检** —— 没授权时
+  `AXUIElementCopyAttributeValue` 是静默返回 nil 的，很容易被读成
+  「这个 app 不支持该属性」而写出错误结论。现成的宿主见 `docs/status.md`
 - 截图只截岛，不截全屏
 - 测试夹具从真实运行里取，别手编
 
