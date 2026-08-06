@@ -5,7 +5,8 @@
 //  贴附那一层。测的都是「出岔子才走到」的分支 —— 真机上造不出来（plan 3.2）。
 //
 
-import CoreGraphics   // MEMBER_IMPORT_VISIBILITY 开着，CGRect/CGSize 得自己 import
+import ApplicationServices   // kAXWindowRole 那几个常量
+import CoreGraphics          // MEMBER_IMPORT_VISIBILITY 开着，CGRect/CGSize 得自己 import
 import Foundation
 import Testing
 @testable import NotchAgent
@@ -198,4 +199,36 @@ struct WindowAttachTests {
 private extension Result where Success == CGRect, Failure == AttachFailure {
     var isSuccess: Bool { if case .success = self { true } else { false } }
     var value: CGRect? { if case .success(let rect) = self { rect } else { nil } }
+}
+
+/// 屏幕锁着的时候 AX 交出来的「窗口」是**假的**：`AXWindows` 里每个元素都
+/// 退化成 app 元素本身（08-07 探针实测）。**不是台前调度干的** ——
+/// 解锁之后目标不管在不在当前舞台，读出来都完全正常。
+///
+/// **拿着它去设 position/size 是静悄悄地什么都不发生** —— 没有报错、
+/// 没有异常，只是窗口不动。表现是「贴上去了但窗口没跟过来」，
+/// 从日志上完全看不出发生了什么，所以只能在拿到句柄的那一步挡掉。
+@Suite("AX 交出来的到底是不是一扇窗口")
+struct AXWindowSanityTests {
+
+    @Test("role 是 AXWindow、而且不是 app 元素本身，才算数")
+    func acceptsARealWindow() {
+        #expect(SystemAXBridge.isUsableWindow(role: kAXWindowRole, isTheAppItself: false))
+    }
+
+    /// 台前调度那个退化：元素和 app 元素 `CFEqual` 为真。
+    /// **哪怕 role 碰巧读出来是 AXWindow 也不能收** —— 它不是一扇窗口。
+    @Test("退化成 app 元素本身的，一律不收")
+    func rejectsTheApplicationElement() {
+        #expect(!SystemAXBridge.isUsableWindow(role: kAXWindowRole, isTheAppItself: true))
+        #expect(!SystemAXBridge.isUsableWindow(role: kAXApplicationRole, isTheAppItself: true))
+    }
+
+    /// role 读不出来（退化时常见）也一律不收 —— 「读不出来」不等于「是窗口」。
+    @Test("role 读不出来、或者根本不是窗口，都不收")
+    func rejectsAnythingElse() {
+        #expect(!SystemAXBridge.isUsableWindow(role: nil, isTheAppItself: false))
+        #expect(!SystemAXBridge.isUsableWindow(role: kAXApplicationRole, isTheAppItself: false))
+        #expect(!SystemAXBridge.isUsableWindow(role: kAXSheetRole, isTheAppItself: false))
+    }
 }

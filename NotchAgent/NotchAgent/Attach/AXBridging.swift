@@ -98,15 +98,41 @@ struct SystemAXBridge: AXBridging {
         AXUIElementSetMessagingTimeout(axApp, Self.messagingTimeout)
 
         // 先问 AXFocusedWindow —— 那才是用户此刻在用的那个。
-        if let focused = copy(axApp, kAXFocusedWindowAttribute) {
-            return AXWindow(focused as! AXUIElement)
+        if let focused = copy(axApp, kAXFocusedWindowAttribute) as! AXUIElement?,
+           isUsableWindow(focused, of: axApp) {
+            return AXWindow(focused)
         }
-        // 退而求其次：窗口列表里标着 AXMain 的，再不行拿第一个。
-        guard let list = copy(axApp, kAXWindowsAttribute) as? [AXUIElement], !list.isEmpty else {
-            return nil
-        }
+        // 退而求其次：窗口列表里标着 AXMain 的，再不行拿第一个能用的。
+        guard let list = (copy(axApp, kAXWindowsAttribute) as? [AXUIElement])?
+            .filter({ isUsableWindow($0, of: axApp) }), !list.isEmpty else { return nil }
         let main = list.first { (copy($0, kAXMainAttribute) as? Bool) == true }
         return AXWindow(main ?? list[0])
+    }
+
+    /// 这个元素**真的是一扇窗口**吗。
+    ///
+    /// **屏幕锁着的时候 AX 会交出垃圾。** 08-07 探针实测：锁屏期间
+    /// `AXWindows` 里每个元素都退化成 **app 元素本身** ——
+    /// `CFEqual(child, appElement)` 为真，role、position 一概读不出来。
+    ///
+    /// 不挡的话我们会拿着这个退化句柄去设 `AXPosition` / `AXSize`，
+    /// 而那是**静悄悄地什么都不发生**：没有报错、没有异常，只是窗口不动。
+    /// 表现是「贴上去了但窗口没跟过来」，从日志上完全看不出发生了什么。
+    ///
+    /// **和台前调度无关。** 第一轮探针把这个退化算到了台前调度头上，
+    /// 因为那几轮恰好都在锁屏时跑的。解锁重跑后：目标 app 不管在不在当前舞台
+    /// （哪怕被挤进左侧那条缩略图），`AXFocusedWindow` 一律正常 ——
+    /// role 是 `AXWindow`、pos/size 读得出、设得进、读回一致。这道闸在
+    /// 台前调度下根本不会触发。
+    private func isUsableWindow(_ element: AXUIElement, of app: AXUIElement) -> Bool {
+        Self.isUsableWindow(role: copy(element, kAXRoleAttribute) as? String,
+                            isTheAppItself: CFEqual(element, app))
+    }
+
+    /// 判据本身。**拆出来是为了能测** —— 台前调度那个退化在单测里造不出来，
+    /// 但「拿到什么样的读数该拒绝」是可以钉死的，而会写错的正是这一步。
+    static func isUsableWindow(role: String?, isTheAppItself: Bool) -> Bool {
+        !isTheAppItself && role == kAXWindowRole
     }
 
     func isSameWindow(_ a: AXWindowHandle, _ b: AXWindowHandle) -> Bool {
