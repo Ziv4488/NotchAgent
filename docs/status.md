@@ -16,7 +16,7 @@ Claude Code 会话在岛里跑通了，日常能用；第三方 app 贴附还没
 | 0 · 三个探针 | 完成，结论回写进 spec 第 11 节 |
 | 1 · 岛壳（四态、几何、窗口层级、拖拽调尺寸） | 完成 |
 | 2 · Claude Code 会话（PTY、hook 通道、tab、持久化、退出收尾） | 完成，日常在用 |
-| 3 · 第三方 app 贴附 | **没开工**。`AXIsProcessTrusted()` 现在为真，权限那关不再挡路 |
+| 3 · 第三方 app 贴附 | **代码写完，实机没验过一次**。AX 层、几何、app tab、拖放入口都在（`Attach/`），端到端「拖一个 app 进去看它贴上」还欠一次真拖 —— 见 `manual-tests.md` §16 |
 | 4 · 打磨 | 7 项里做完 3 项，见下 |
 
 ## 跑起来
@@ -27,7 +27,13 @@ xcodebuild test -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -des
 ./scripts/smoke.sh          # 起真 claude，端到端验 hook 事件
 ```
 
-08-06 那次全绿：**379 个测试 / 38 个套件**。
+08-07 那次全绿：**422 个测试 / 43 个套件**。
+
+拖放不落时看日志（SwiftUI 的 `.dropDestination` 收不到，已改到窗口层）：
+
+```sh
+log stream --predicate 'subsystem == "com.notchagent" && category == "drop"'
+```
 
 ## 下一步（用户排的顺序）
 
