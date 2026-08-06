@@ -380,7 +380,13 @@ socket 路径放 `~/Library/Application Support/NotchAgent/hooks.sock`，启动�
 
 在 `docs/manual-tests.md` 里对 ChatGPT / Claude / Cursor / 终端各执行并记录结果：贴附 → 收起 → 再展开 → 移除 tab → **验证窗口回到原始 frame** → 撤销权限后的降级 → app 被手动退出后 tab 转「未运行」。
 
-**第 3 阶段完成标准**：四个 app 的清单全绿（或明确记录哪个 app 因 AX 限制降级成「只做调度」）。
+**第 3 阶段完成标准**：
+
+1. 四个 app 的清单全绿（或明确记录哪个 app 因 AX 限制降级成「只做调度」）
+2. **把 `~/Applications/AXProbe.app` 删掉，并在「系统设置 → 隐私与安全性 →
+   辅助功能」里撤掉它那条授权。** 那是 08-06 为跑 AX 探针建的宿主（见 spec 11.4），
+   第 3 阶段做完就没用了。一个签过名、常驻在 `~/Applications`、还揣着辅助功能
+   授权的小 app，留着就是白送出去的一个面。**这条不做完，第 3 阶段不算完**
 
 ---
 

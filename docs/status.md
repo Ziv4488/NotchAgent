@@ -101,6 +101,12 @@ xcodebuild test -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -des
   要在边上来回蹭，前提先点一下岛。**§15.x（终端主题）整块也等你复测**
 - 清单的记法不统一：过了的行有的划掉、有的只在旁边写日期、有的当时口头过了没回写。
   往后一律回写，不然过一阵就分不清哪些是真没测
+- **`~/Applications/AXProbe.app` 欠着一笔删除。** 08-06 为跑 AX 探针（spec 11.4）
+  建的宿主，签了 Personal Team、在「辅助功能」里授了权，用户拍板留到第 3 阶段用完
+  —— 后面还有多窗口切换、别的 app 的最小尺寸、崩溃后还原几轮要跑，每次重来一遍
+  授权太费。**第 3 阶段一做完就删 app + 撤授权**，这条已经写进 plan 的
+  「第 3 阶段完成标准」，不做完不算完。源码在 scratchpad 的 `axprobe.swift`，
+  会随会话清掉，真要复用得先挪进 `scripts/`
 
 ## 拍过板不做的
 
