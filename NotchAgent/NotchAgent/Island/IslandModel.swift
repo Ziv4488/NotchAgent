@@ -637,6 +637,12 @@ final class IslandModel {
     /// `NotchHostingView` 拿它去登记 cursor rect（光标形状），见那边的注释。
     var resizeHandleFrames: [ResizeHandles.Kind: CGRect] = [:]
 
+    /// 正拖着一个 `.app` 悬在岛上。＋ 面板据此画那圈虚线（`NewTaskForm.dropHint`）。
+    ///
+    /// **这一位由窗口层写，不是 SwiftUI 写的。** 拖放走的是
+    /// `NotchHostingView` 上的 `NSDraggingDestination`，理由见那边。
+    var isDropTargeted = false
+
     /// 选中的那个 tab 现在有没有在问你。**只在收起态给** ——
     /// 展开时终端本身就摆着那个选单，再叠一层浮层是两份同样的东西。
     var pendingMenu: TerminalMenu? {

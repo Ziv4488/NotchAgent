@@ -41,4 +41,15 @@ enum AppRegistry {
         var seen: Set<String> = []
         return urls.compactMap(identify).filter { seen.insert($0.bundleID).inserted }
     }
+
+    /// 一次拖拽里带着的文件 URL。
+    ///
+    /// **只读 `NSURL`、且限定 `urlReadingFileURLsOnly`。** 从访达拖东西过来，
+    /// 剪贴板上同时挂着 `public.file-url`、`public.url`、纯文本路径、图标图片好几份；
+    /// 不限定的话一个 `.app` 会被读成两三个 URL（`file://` 一个、`public.url` 又一个），
+    /// 去重前先多绕一圈。认不认得出是 app 交给 `identify(_:)`，这里只负责取出来。
+    static func fileURLs(on pasteboard: NSPasteboard) -> [URL] {
+        pasteboard.readObjects(forClasses: [NSURL.self],
+                               options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+    }
 }

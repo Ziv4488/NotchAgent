@@ -5,6 +5,7 @@
 //  往 ＋ 面板里拖一个 `.app` 进来之后发生什么（用户 08-07 定的入口）。
 //
 
+import AppKit
 import CoreGraphics
 import Foundation
 import Testing
@@ -50,6 +51,39 @@ struct AppRegistryTests {
     @Test("同一个 app 拖两次只算一个")
     func dedupesByBundleID() {
         #expect(AppRegistry.identify([finder, finder]).count == 1)
+    }
+
+    // MARK: - 从剪贴板上取
+
+    /// 造一块只属于这条测试的剪贴板 —— **绝不碰系统那块**（CLAUDE.md：
+    /// 别动用户正在用的剪贴板）。
+    private func scratchPasteboard(_ objects: [Any]) -> NSPasteboard {
+        let board = NSPasteboard(name: NSPasteboard.Name("notch-drop-\(UUID().uuidString)"))
+        board.clearContents()
+        board.writeObjects(objects as! [NSPasteboardWriting])
+        return board
+    }
+
+    @Test("从拖拽的剪贴板上取出文件 URL")
+    func readsFileURLsOffThePasteboard() {
+        let board = scratchPasteboard([finder as NSURL, calculator as NSURL])
+        defer { board.releaseGlobally() }
+
+        let urls = AppRegistry.fileURLs(on: board)
+        #expect(urls.count == 2)
+        #expect(AppRegistry.identify(urls).map(\.bundleID).sorted()
+                == ["com.apple.calculator", "com.apple.finder"])
+    }
+
+    /// 从访达拖东西过来，剪贴板上同时挂着好几种表示。**限定只读 file URL**，
+    /// 否则一个 `.app` 会被读成两个 URL（`file://` 一个、`public.url` 又一个）。
+    @Test("网址不算文件，不取")
+    func ignoresNonFileURLs() {
+        let board = scratchPasteboard([finder as NSURL,
+                                       URL(string: "https://example.com")! as NSURL])
+        defer { board.releaseGlobally() }
+
+        #expect(AppRegistry.fileURLs(on: board) == [finder])
     }
 
     // MARK: - 落到 tab 上

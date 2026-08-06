@@ -170,7 +170,7 @@ struct IslandShell: View {
                                 bottomInset: PanelCard.bottomInset,
                                 onSubmit: { model.startTask(in: $0, instruction: $1) },
                                 onCancel: model.cancelNewTask,
-                                onDropApps: { model.addAppTabs(from: $0) })
+                                isDropTargeted: model.isDropTargeted)
                         .transition(.opacity)
                 } else {
                     // **展开态底下就这一层，内容区自己铺满。**

@@ -17,16 +17,16 @@ struct NewTaskForm: View {
     var bottomInset: CGFloat = 0
     var onSubmit: (ProjectDirectory, String) -> Void
     var onCancel: () -> Void
-    /// 往表单里拖了几个 `.app` 进来。返回真表示收下了。
+    /// 正拖着 `.app` 悬在岛上。**这一位从窗口层来，不是这儿量的** ——
+    /// 拖放走 `NotchHostingView` 的 `NSDraggingDestination`（理由见那边）。
     ///
-    /// **入口做成拖放而不是菜单项**（用户 08-07）：菜单那条是「先想好要贴谁」，
+    /// 入口做成拖放而不是菜单项（用户 08-07）：菜单那条是「先想好要贴谁」，
     /// 拖进来是「看见什么贴什么」。plan 3.1 原本写的是「在设置里选一个 .app」，
     /// 那时还没有 ＋ 这个面板可用。
-    var onDropApps: ([URL]) -> Bool = { _ in false }
+    var isDropTargeted = false
 
     @State private var selected: ProjectDirectory?
     @State private var instruction = ""
-    @State private var isDropTargeted = false
     @FocusState private var instructionFocused: Bool
 
     /// 这张表单画在内容区那张卡片上，而卡片的底 2026-08-05 起是主题色。
@@ -65,9 +65,6 @@ struct NewTaskForm: View {
         .overlay { dropHint }
         .padding(.horizontal, PanelCard.inset)
         .padding(.bottom, bottomInset)
-        .dropDestination(for: URL.self,
-                         action: { urls, _ in onDropApps(urls) },
-                         isTargeted: { isDropTargeted = $0 })
         .onAppear {
             selected = projects.first
             focusInstruction()
