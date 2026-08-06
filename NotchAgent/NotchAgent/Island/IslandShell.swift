@@ -120,12 +120,18 @@ struct IslandShell: View {
         let outline = NotchShape(bottomRadius: radii.bottom,
                                  invertedRadius: radii.inverted,
                                  closesTop: false)
-        return shape
-            .fill(.black)
+        // 选中 app tab 时中间挖掉一块给真实窗口露出来，四周剩下的黑就是那圈边框。
+        let body = IslandBody(bottomRadius: radii.bottom, invertedRadius: radii.inverted,
+                              hole: model.attachedHoleInIsland,
+                              holeRadius: model.constants.attachHoleRadius)
+        return body
+            .fill(.black, style: FillStyle(eoFill: true))
             .overlay {
                 // 悬停只做轻微提亮，不展开、不预览（spec 3.1）。
-                shape.fill(model.isHovering && model.state != .expanded
-                           ? IslandTheme.hoverTint : Color.clear)
+                // 同样按 even-odd 填 —— 不然提亮那一层会把洞重新糊上。
+                body.fill(model.isHovering && model.state != .expanded
+                          ? IslandTheme.hoverTint : Color.clear,
+                          style: FillStyle(eoFill: true))
             }
             // 黑线：线宽取两倍，里外各一半。落在里面那半压在纯黑岛体上看不出来，
             // 露在外面的正好是要的 0.5pt。
@@ -164,7 +170,11 @@ struct IslandShell: View {
             }
 
             if model.state == .expanded {
-                if model.showsNewTaskForm {
+                if model.selectedTabIsApp {
+                    // 这块地方归贴在下面的真实窗口。岛在背景里已经把它挖空了
+                    // （`IslandBody.hole`），这一层要是画点什么就正好糊在窗口上。
+                    Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if model.showsNewTaskForm {
                     NewTaskForm(projects: model.projects,
                                 error: model.launchError,
                                 bottomInset: PanelCard.bottomInset,

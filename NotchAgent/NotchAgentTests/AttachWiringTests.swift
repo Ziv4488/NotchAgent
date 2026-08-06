@@ -68,23 +68,45 @@ struct AttachWiringTests {
 
     // MARK: - 岛让出内容区
 
-    /// **岛体是不透明的 `.fill(.black)`**（`IslandShell.edges`）。选中 app tab
-    /// 时不缩成 chrome 的话，那块黑直接把贴在下面的窗口盖没了 —— 用户看到的是
-    /// 一块黑，会以为贴附失败。
-    @Test("选中 app tab 时岛缩成只剩状态带 + tab 条")
-    func islandShrinksForAppTabs() {
+    /// **岛体是不透明的 `.fill(.black)`**（`IslandShell.edges`），不让开就把贴在
+    /// 下面的窗口盖没了 —— 用户看到一块黑，会以为贴附失败。
+    ///
+    /// 08-07 之前是把整个岛缩成只剩 chrome、内容区让出去。用户实机后说
+    /// 「感觉不是一个东西，没有在岛内的感觉」：窗口紧贴岛的下沿，自己的标题栏、
+    /// 圆角、阴影全露在外面。现在改成岛照常铺满、在内容区**挖个洞**，
+    /// 洞四周那圈黑边就是框。**洞没挖出来的表现和当年不缩一模一样。**
+    @Test("选中 app tab 时岛不缩，改成在内容区挖个洞")
+    func islandPunchesAHoleForAppTabs() {
         let (model, _, _, _) = staged()
         model.debugStartSession(named: "refactor-auth")
         model.debugAttachApp(named: "ChatGPT")
         model.send(.click)
 
         let full = model.size.height
+        #expect(model.attachedHoleInIsland.isEmpty)   // CLI tab 不挖
+
         model.selectTab(model.tabs.last!.id)          // 切到 app tab
-        #expect(model.size.height == model.metrics.chromeOnlyHeight)
-        #expect(model.size.height < full)
+        #expect(model.size.height == full)            // 岛不再缩
+        let hole = model.attachedHoleInIsland
+        #expect(!hole.isEmpty)
+        // 洞在 tab 条下面，四周都留着黑边。
+        #expect(hole.minY > model.metrics.bandAndTabsHeight)
+        #expect(hole.maxY < full)
 
         model.selectTab(model.tabs.first!.id)         // 切回 CLI tab
-        #expect(model.size.height == full)
+        #expect(model.attachedHoleInIsland.isEmpty)
+    }
+
+    /// 收起之后洞得填回去 —— 不然刘海那条黑带上会留一个透明缺口。
+    @Test("收起岛就不挖洞了")
+    func collapsingFillsTheHoleBack() {
+        let (model, _, _, _) = staged()
+        model.debugAttachApp(named: "ChatGPT")
+        model.send(.click)
+        #expect(!model.attachedHoleInIsland.isEmpty)
+
+        model.send(.dismiss)
+        #expect(model.attachedHoleInIsland.isEmpty)
     }
 
     // MARK: - 接管 / 藏 / 还
@@ -96,9 +118,9 @@ struct AttachWiringTests {
         model.send(.click)
         executor.drainAll()
 
-        let content = model.metrics.contentRectOnScreen
+        let target = model.metrics.attachedWindowRect
         let now = try? #require(ax.frame(of: window))
-        #expect(now?.size == content.size)
+        #expect(now?.size == target.size)
         #expect(ax.activated.contains("com.openai.codex"))
     }
 
@@ -147,11 +169,15 @@ struct AttachWiringTests {
         model.send(.click)
         executor.drainAll()
 
-        #expect(model.expandedWidthRange.lowerBound == 900)
+        // **岛要比窗口大出两条黑边。** 900 是窗口的下限，不是岛的 ——
+        // 少算这一下，拖到底时窗口就被挤得比它能接受的还小，AX 把它钳回去，
+        // 于是窗口从黑边里溢出来。
+        let bezel = model.constants.attachBezel
+        #expect(model.expandedWidthRange.lowerBound == 900 + bezel * 2)
         #expect(model.expandedWidthRange.lowerBound > floorBefore)
-        // 高度那一侧要换算回「内容区」口径（贴附占的是内容区 + 退休的输入框 44pt）。
+        // 高度那一侧还要换算回「内容区」口径（贴附占的是内容区 + 退休的输入框 44pt）。
         #expect(model.expandedContentHeightRange.lowerBound
-                == 700 - model.constants.retiredInputBarHeight)
+                == 700 + bezel * 2 - model.constants.retiredInputBarHeight)
     }
 
     @Test("没被钳制时拖拽下限不动")
@@ -254,7 +280,8 @@ struct AttachWiringTests {
         executor.drainAll()
         #expect(ax.setFrameCalls - callsAfterAttach == 2)   // 第一帧 + 最新那帧
         let final = try #require(ax.frame(of: window))
-        #expect(final.width == model.metrics.contentRectOnScreen.width)
-        #expect(final.width == 980)
+        #expect(final.width == model.metrics.attachedWindowRect.width)
+        // 岛拖到 980，窗口比它窄两条黑边。
+        #expect(final.width == 980 - model.constants.attachBezel * 2)
     }
 }

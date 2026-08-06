@@ -752,5 +752,40 @@ struct IslandPixelTests {
         #expect(middle < 0.5, "芯片正中的左边缘在 \(middle)pt —— 量到的不是轮廓")
     }
 
+    // MARK: - 贴附窗口的那个洞（用户 08-07）
 
+    /// **岛必须真的在那儿留一个透明的洞。**
+    ///
+    /// 岛压在第三方窗口之上（层级 `statusBar + 1`），岛体又是不透明的纯黑。
+    /// 洞没挖出来的表现是「贴上去了，但窗口不见了，只有一块黑」——
+    /// 和 08-07 之前岛不缩时的老毛病一模一样。
+    ///
+    /// 这条从**画面**上判，不是从常量上判：`IslandBodyTests` 管路径对不对，
+    /// 这里管那条路径真的被接到了 `IslandShell` 上。回滚验证过：把
+    /// `hole: model.attachedHoleInIsland` 改成 `.zero`，这条当场红。
+    ///
+    /// **它抓不住 `FillStyle(eoFill: true)` 被拿掉**，别以为它能。实测今天的
+    /// `NotchShape` 和 `addRoundedRect` 绕向正好相反，nonzero 也照样挖得出洞，
+    /// 所以那个参数删了画面一个像素都不变 —— 没有任何测试能分辨。
+    /// 留着它的理由见 `IslandShell.edges`。
+    @Test("选中 app tab 时，内容区那块是真的挖空的")
+    func appTabPunchesARealHole() throws {
+        let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
+        model.debugAttachApp(named: "ChatGPT")
+        model.previewState(.expanded)
+        let image = try raster(IslandShell(model: model), size: canvas(around: model))
+
+        let hole = try #require(model.attachedHoleInIsland.isEmpty ? nil : model.attachedHoleInIsland)
+        // 岛贴着画布顶边、水平居中，所以洞在画面里的位置只差一个水平偏移。
+        let bodyLeft = (image.width - Int(model.size.width)) / 2
+        let holeLeft = bodyLeft + Int(model.constants.attachBezel)
+        let y = Int(hole.midY)
+
+        let inside = holeLeft + Int(hole.width) / 2
+        #expect(image.isBackdrop(inside, y),
+                "洞里该透出底色，量到的是 \(image.color(inside, y))")
+        // 洞左边那条黑边：是岛，不是底色。
+        #expect(!image.isBackdrop(holeLeft - 4, y))
+        #expect(image.isIsland(holeLeft - 4, y))
+    }
 }

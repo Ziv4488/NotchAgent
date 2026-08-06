@@ -197,11 +197,18 @@ final class IslandModel {
     var tabShape: TabShape { TabShape(count: tabs.count, width: tabStripWidth) }
 
     var size: CGSize {
-        metrics.size(for: state, tabStripWidth: tabStripWidth, chromeOnly: selectedTabIsApp)
+        metrics.size(for: state, tabStripWidth: tabStripWidth)
     }
 
-    /// 选中的是个贴附第三方 app 的 tab 吗。岛为它缩成只剩 chrome。
+    /// 选中的是个贴附第三方 app 的 tab 吗。
     var selectedTabIsApp: Bool { selectedTab?.isApp == true }
+
+    /// 岛此刻要在内容区挖的那个洞，**岛画布坐标**（原点左上）。
+    /// 空矩形表示不挖 —— 只有「展开着，而且选中的是 app tab」时才挖。
+    var attachedHoleInIsland: CGRect {
+        guard state == .expanded, selectedTabIsApp else { return .zero }
+        return metrics.attachedHoleInIsland
+    }
 
     // MARK: - 贴附第三方 app（spec 6）
 
@@ -237,7 +244,7 @@ final class IslandModel {
             return
         }
         attach.unhide(bundleID: active)
-        attach.attach(bundleID: active, to: metrics.contentRectOnScreen) { [weak self] result in
+        attach.attach(bundleID: active, to: metrics.attachedWindowRect) { [weak self] result in
             self?.apply(result)
         }
     }
@@ -249,7 +256,7 @@ final class IslandModel {
             // **只有真的被钳住才记。** 实得等于要的，说明窗口压得下去，
             // 这时候把当前尺寸当成下限的话，用户就再也拖不小了。
             // 两个方向分开判：只钳宽不钳高是常事。
-            let asked = metrics.contentRectOnScreen
+            let asked = metrics.attachedWindowRect
             let width = achieved.width > asked.width + 0.5 ? achieved.width : 0
             let height = achieved.height > asked.height + 0.5 ? achieved.height : 0
             attachedMinimum = (width > 0 || height > 0)
@@ -294,7 +301,7 @@ final class IslandModel {
     private func followAttachment() {
         guard let attach, state == .expanded,
               let bundleID = selectedTab?.appBundleID else { return }
-        attach.follow(metrics.contentRectOnScreen, bundleID: bundleID)
+        attach.follow(metrics.attachedWindowRect, bundleID: bundleID)
     }
 
     /// 岛的圆角。**底下挂着选项浮层时，底边是接缝，圆角要收掉。**
@@ -358,13 +365,18 @@ final class IslandModel {
 
     /// 拖拽范围。**选中 app tab 时下限被那个窗口的最小尺寸顶起来**（spec 6.4）：
     /// 目标窗口压不到岛这么小，与其让它溢出去错位，不如根本不让用户拖到那儿。
+    /// **`attachedMinimum` 是那个窗口的下限，不是岛的。** 窗口四周还有一圈黑边，
+    /// 所以岛要比它宽 / 高出 `attachBezel` 的两倍，换算这一下不能省。
     var expandedWidthRange: ClosedRange<CGFloat> {
-        raise(metrics.expandedWidthRange, to: attachedMinimum?.width)
+        let floor = attachedMinimum.map { $0.width + constants.attachBezel * 2 }
+        return raise(metrics.expandedWidthRange, to: floor)
     }
 
     var expandedContentHeightRange: ClosedRange<CGFloat> {
-        // 贴附的窗口占的是「内容区 + 退休的输入框那 44pt」，换算回内容区口径。
-        let floor = attachedMinimum.map { $0.height - constants.retiredInputBarHeight }
+        // 岛的内容区 = 窗口 + 上下两条黑边 + 退休的输入框那 44pt，换算回内容区口径。
+        let floor = attachedMinimum.map {
+            $0.height + constants.attachBezel * 2 - constants.retiredInputBarHeight
+        }
         return raise(metrics.expandedContentHeightRange, to: floor)
     }
 

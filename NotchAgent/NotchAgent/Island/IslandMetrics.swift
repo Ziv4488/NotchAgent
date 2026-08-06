@@ -57,6 +57,20 @@ struct IslandConstants: Equatable, Sendable {
     /// 上沿两侧内凹拐角半径。无刘海时强制为 0。
     var invertedCornerRadius: CGFloat = 8
 
+    /// 贴附的窗口四周留给岛的那圈黑边。
+    ///
+    /// **用户 08-07 实机后定的**：原来窗口直接顶着岛的下沿铺满，它自己的标题栏、
+    /// 圆角、阴影全露在外面，读起来是「两个窗口叠着」而不是「app 在岛里」。
+    /// 往里缩一圈、让岛在外面框住它，才有嵌进去的感觉。
+    var attachBezel: CGFloat = 8
+
+    /// 岛给贴附窗口挖的那个洞的圆角。
+    ///
+    /// **要比目标窗口自己的圆角大一点，不能小。** 窗口的四个角是圆的，
+    /// 它自己不画那块；洞要是更方，那四小块就直接漏出桌面。宁可让黑边
+    /// 多啃进窗口一丝 —— 啃掉的是窗口自己也没画的地方。
+    var attachHoleRadius: CGFloat = 14
+
     static let `default` = IslandConstants()
 }
 
@@ -103,11 +117,11 @@ struct IslandMetrics {
 
     /// `tabStripWidth` 是 tab 条内容渲染出来的实际宽度，只有 notice 态用得到。
     ///
-    /// `chromeOnly` 是选中 app tab 时那一档：内容区整块让给真实窗口，
-    /// 岛只剩状态带 + tab 条。**岛体是不透明的 `.fill(.black)`**，
-    /// 不缩的话直接把贴在下面的窗口盖没了。
-    func size(for state: IslandState, tabStripWidth: CGFloat = 0,
-              chromeOnly: Bool = false) -> CGSize {
+    /// **选中 app tab 时岛不缩。** 08-07 之前它会缩成只剩状态带 + tab 条，把
+    /// 内容区整块让出去（岛体是不透明的 `.fill(.black)`，不缩就把窗口盖没了）。
+    /// 现在改成岛照常铺满、在内容区**挖一个洞**（见 `attachedHoleInIsland`），
+    /// 洞的四周就是那圈黑边 —— 用户要的「嵌在岛里」。
+    func size(for state: IslandState, tabStripWidth: CGFloat = 0) -> CGSize {
         switch state {
         case .idle:
             return CGSize(width: baseWidth + constants.idleSideBleed * 2,
@@ -126,8 +140,7 @@ struct IslandMetrics {
 
         case .expanded:
             return CGSize(width: expandedWidth,
-                          height: chromeOnly ? chromeOnlyHeight
-                                             : expandedChromeHeight + expandedContentHeight)
+                          height: expandedChromeHeight + expandedContentHeight)
         }
     }
 
@@ -183,29 +196,48 @@ struct IslandMetrics {
     /// **上面不留**：岛的顶边压在屏幕物理上沿，往上让出来的地方在屏幕外。
     /// 内容区在屏幕上的位置，**原点左下**（和 `containerFrame` 同一套坐标）。
     ///
-    /// 贴附的第三方窗口占的就是这块地方（plan 3.3）：选中 app tab 时岛只画
-    /// 状态带 + tab 条，往下这一整块让给真实窗口，看起来就像是岛的内容。
+    /// 贴附的第三方窗口占的**就在这块地方里面**（plan 3.3），
+    /// 再往里缩一圈黑边才是窗口本身 —— 见 `attachedWindowRect`。
     ///
     /// 高度是「岛的总高减去状态带和 tab 条」，也就是 `retiredInputBarHeight`
     /// 加上 `expandedContentHeight` —— 跟 CLI tab 的内容区**占的是同一块地方**，
     /// 所以两种 tab 之间来回切，岛的整体轮廓不变。
-    ///
-    /// **喂给 AX 之前要翻成原点左上**，见 `AXCoordinates.topLeft`。
     var contentRectOnScreen: CGRect {
         let size = size(for: .expanded)
-        let chrome = geometry.menuBarHeight + constants.tabStripHeight
-        let height = size.height - chrome
+        let height = size.height - bandAndTabsHeight
         return CGRect(x: geometry.islandCenterX - size.width / 2,
                       y: geometry.screenTopY - size.height,
                       width: size.width,
                       height: height)
     }
 
-    /// 选中 app tab 时岛自己的高度：只剩状态带 + tab 条。
+    /// 贴附的窗口在屏幕上占的矩形，**原点左下**（和 `containerFrame` 同一套坐标）。
+    /// 就是内容区往里缩一圈 `attachBezel`。
     ///
-    /// 内容区那一整块交给了真实窗口，岛不能再在上面盖一层黑
-    /// （岛体是不透明的 `.fill(.black)`，盖上去就把窗口挡没了）。
-    var chromeOnlyHeight: CGFloat {
+    /// **喂给 AX 之前要翻成原点左上**，见 `AXCoordinates.topLeft`。
+    var attachedWindowRect: CGRect {
+        contentRectOnScreen.insetBy(dx: constants.attachBezel, dy: constants.attachBezel)
+    }
+
+    /// 同一块地方，换成**岛自己那块画布的坐标**（原点左上、y 朝下，和 SwiftUI 一致）。
+    ///
+    /// 岛要在这儿挖洞（`IslandBody`），命中测试也要在这儿放行
+    /// （`NotchHostingView.accepts` —— 不放行的话点在窗口上是岛把点击吃了）。
+    /// **它和 `attachedWindowRect` 必须描述同一块地方**：两边分开算，
+    /// 迟早有一处对不上，而对不上的表现是「看着有个洞，点下去没反应」。
+    /// `AttachGeometryTests`「洞和窗口说的是同一块地方」钉着这条。
+    var attachedHoleInIsland: CGRect {
+        let size = size(for: .expanded)
+        let bezel = constants.attachBezel
+        // 岛体画在画布里、左右各让出一个内凹半径（见 `IslandShell.canvasWidth`）。
+        return CGRect(x: cornerRadii(for: .expanded).inverted + bezel,
+                      y: bandAndTabsHeight + bezel,
+                      width: size.width - bezel * 2,
+                      height: size.height - bandAndTabsHeight - bezel * 2)
+    }
+
+    /// 状态带 + tab 条占掉的高度，也就是内容区从哪儿开始。
+    var bandAndTabsHeight: CGFloat {
         geometry.menuBarHeight + constants.tabStripHeight
     }
 

@@ -112,3 +112,44 @@ struct NotchShapeTests {
         #expect(canvas.insetBy(dx: -0.5, dy: -0.5).contains(p.boundingRect))
     }
 }
+
+/// 岛体在选中 app tab 时中间要挖掉一块给真实窗口（用户 08-07 定的黑边框）。
+///
+/// **填充必须是 even-odd**，否则洞会被一起填成黑的 —— 而那正好是
+/// 「贴上去了但窗口不见了」这个最坏的表现，和挖洞之前一模一样。
+@Suite("岛体上的那个洞")
+struct IslandBodyTests {
+
+    private let hole = CGRect(x: 40, y: 30, width: 100, height: 20)
+
+    private func body(hole: CGRect) -> Path {
+        IslandBody(bottomRadius: bottom, invertedRadius: inverted,
+                   hole: hole, holeRadius: 4).path(in: canvas)
+    }
+
+    /// **取样点故意避开 `hole.midY` 那一行。** `addRoundedRect` 的子路径起点正好在
+    /// 右边缘的竖直中点上，水平射线打在 y = midY 时穿过的是一个**顶点**，
+    /// 奇偶计数在那儿是退化的 —— 实测那一行的结果整个反过来（洞中央报「在里面」、
+    /// 洞外面报「不在」），其余每一行都对。渲染不受影响（光栅化按像素中心取样，
+    /// 那是一条零测度的线），但拿它当断言会把人带到完全错误的方向上去。
+    private let sampleY: CGFloat = 34
+
+    @Test("洞里的点不算在填充里，洞外岛内的点算")
+    func theHoleIsNotFilled() {
+        let path = body(hole: hole)
+        #expect(!path.contains(CGPoint(x: hole.midX, y: sampleY), eoFill: true))
+        // 洞左边那条黑边仍是实的。
+        #expect(path.contains(CGPoint(x: hole.minX - 4, y: sampleY), eoFill: true))
+        // 洞上面的 tab 条那一带也是实的。
+        #expect(path.contains(CGPoint(x: hole.midX, y: hole.minY - 10), eoFill: true))
+    }
+
+    /// 不挖洞时必须和 `NotchShape` 一模一样 —— CLI tab、收起态走的都是这一支。
+    @Test("不挖洞时就是原来那个轮廓")
+    func withoutAHoleItIsJustTheNotchShape() {
+        #expect(body(hole: .zero).boundingRect
+                == NotchShape(bottomRadius: bottom, invertedRadius: inverted)
+                    .path(in: canvas).boundingRect)
+        #expect(body(hole: .zero).contains(CGPoint(x: canvas.midX, y: canvas.midY), eoFill: true))
+    }
+}

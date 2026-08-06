@@ -60,6 +60,10 @@ class NotchHostingView: NSHostingView<IslandShell> {
     ///    命中测试三处口径分开算，迟早有一处对不上，而对不上的表现正是
     ///    「看着能拖，按下去没反应」。收起态没有手柄，字典是空的，这条恒为假。
     func accepts(_ pointInView: NSPoint) -> Bool {
+        // **洞先判，而且是一票否决。** 它整个落在岛的轮廓里，顺序反过来的话
+        // 下面那句先把它认成「岛的地盘」放行了 —— 表现就是贴附的窗口看得见、
+        // 点不动，点击全被岛吃掉。
+        if attachedHoleRect().contains(pointInView) { return false }
         if islandPath().contains(pointInView) || menuRect().contains(pointInView) { return true }
         return rootView.model.resizeHandleFrames.values
             .contains { !$0.isEmpty && $0.contains(pointInView) }
@@ -288,6 +292,24 @@ class NotchHostingView: NSHostingView<IslandShell> {
         super.layout()
         window?.invalidateCursorRects(for: self)
         updateTrackingAreas()
+    }
+
+    /// 岛给贴附窗口挖的那个洞，转换到本视图坐标系。没贴东西时是空矩形。
+    ///
+    /// **和 `islandPath()` 走完全相同的那一下换算**（同样的 `originX`、
+    /// 同样按 `isFlipped` 分两支）—— 洞是画在岛体上的，两边各算一套的话
+    /// 迟早差出几个点，而差出来的表现是「窗口边上一条缝点不动」。
+    func attachedHoleRect() -> CGRect {
+        let hole = rootView.model.attachedHoleInIsland
+        guard !hole.isEmpty else { return .null }
+
+        let (size, radii) = islandGeometry()
+        let originX = bounds.midX - (size.width + radii.inverted * 2) / 2
+        guard isFlipped else {
+            return CGRect(x: originX + hole.minX, y: bounds.maxY - hole.maxY,
+                          width: hole.width, height: hole.height)
+        }
+        return hole.offsetBy(dx: originX, dy: bounds.minY)
     }
 
     /// 选项浮层占的那块。没有浮层时是空矩形，`contains` 恒为假。

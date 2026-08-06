@@ -38,12 +38,65 @@ struct AttachGeometryTests {
         #expect(rect.midX == geometry.islandCenterX)
     }
 
-    /// 岛的总高一分为二：状态带 + tab 条归岛自己画，剩下的全给贴附的窗口。
+    /// 岛的总高一分为二：状态带 + tab 条归岛自己画，剩下的是内容区。
     /// 少一个像素窗口就压不满，多一个就盖住 tab 条。
-    @Test("chromeOnlyHeight 加上内容区高度正好是岛的总高")
+    @Test("bandAndTabsHeight 加上内容区高度正好是岛的总高")
     func chromeAndContentAddUpToTheIsland() {
         let m = metrics()
-        #expect(m.chromeOnlyHeight + m.contentRectOnScreen.height == m.size(for: .expanded).height)
+        #expect(m.bandAndTabsHeight + m.contentRectOnScreen.height == m.size(for: .expanded).height)
+    }
+
+    // MARK: - 窗口四周那圈黑边（用户 08-07）
+
+    /// 窗口原来是直接顶着岛的下沿铺满的，用户说「感觉不是一个东西」。
+    /// 现在四周各让出 `attachBezel`，岛在外面框住它。
+    @Test("贴附的窗口比内容区四周各小一圈")
+    func theWindowIsInsetFromTheContentArea() {
+        let m = metrics()
+        let bezel = m.constants.attachBezel
+        let content = m.contentRectOnScreen
+        let window = m.attachedWindowRect
+
+        #expect(bezel > 0)
+        #expect(window.minX == content.minX + bezel)
+        #expect(window.maxX == content.maxX - bezel)
+        #expect(window.minY == content.minY + bezel)
+        #expect(window.maxY == content.maxY - bezel)
+    }
+
+    /// **岛挖的洞和窗口摆的位置必须是同一块地方。** 一边是岛画布坐标（原点左上），
+    /// 一边是屏幕坐标（原点左下），两边分开算，迟早有一处对不上 ——
+    /// 而对不上的表现是「看着有个洞，点下去没反应」，或者反过来「窗口边上一条缝
+    /// 点不动」。这条把两套坐标接起来对一遍。
+    @Test("洞和窗口说的是同一块地方")
+    func theHoleAndTheWindowAgree() {
+        let geometry = FakeScreenGeometry.macBook14
+        let m = metrics()
+        let island = m.size(for: .expanded)
+        let hole = m.attachedHoleInIsland
+        let window = m.attachedWindowRect
+
+        #expect(hole.size == window.size)
+        // 洞离岛顶多远 == 窗口上沿离屏幕顶多远（岛的顶边就压在屏幕顶上）。
+        #expect(hole.minY == geometry.screenTopY - window.maxY)
+        // 洞离岛体左沿多远 == 窗口左沿离岛体左沿多远。
+        // 画布左右各比岛体多出一个内凹半径，减掉它才是岛体自己的左沿。
+        let inverted = m.cornerRadii(for: .expanded).inverted
+        #expect(hole.minX - inverted == window.minX - (geometry.islandCenterX - island.width / 2))
+    }
+
+    /// 洞必须整个落在岛体里 —— 探出去就是在屏幕上开了个透明缺口。
+    @Test("洞在 tab 条下面，四周都还有岛")
+    func theHoleStaysInsideTheIsland() {
+        let m = metrics()
+        let island = m.size(for: .expanded)
+        let hole = m.attachedHoleInIsland
+        let inverted = m.cornerRadii(for: .expanded).inverted
+
+        #expect(hole.minY > m.bandAndTabsHeight)
+        #expect(hole.maxY < island.height)
+        #expect(hole.minX > inverted)
+        #expect(hole.maxX < inverted + island.width)
     }
 
     /// 拖拽调尺寸时窗口要跟着走，所以这个矩形必须跟着 expanded 尺寸变。
