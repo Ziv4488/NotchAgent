@@ -196,7 +196,76 @@ final class IslandModel {
 
     var tabShape: TabShape { TabShape(count: tabs.count, width: tabStripWidth) }
 
-    var size: CGSize { metrics.size(for: state, tabStripWidth: tabStripWidth) }
+    var size: CGSize {
+        metrics.size(for: state, tabStripWidth: tabStripWidth, chromeOnly: selectedTabIsApp)
+    }
+
+    /// 选中的是个贴附第三方 app 的 tab 吗。岛为它缩成只剩 chrome。
+    var selectedTabIsApp: Bool { selectedTab?.isApp == true }
+
+    // MARK: - 贴附第三方 app（spec 6）
+
+    /// 贴附那一层。**nil 就是不接** —— 预览和单测默认不去碰真窗口。
+    var attach: AttachDriver?
+
+    /// 贴附出岔子了。内容区拿它画占位卡（没授权时引导去系统设置）。
+    private(set) var attachFailure: AttachFailure?
+
+    /// 目标窗口压不下去的那个尺寸。
+    ///
+    /// spec 6.4 原本写的是「压不住就把岛加宽」，那是事后补救；实测下来更干净的
+    /// 做法是**反过来钉住拖拽下限** —— 根本不让用户拖到窗口做不到的尺寸去。
+    /// 这个数问不出来，只能设完读回（spec 11.4），所以它来自 attach 的返回值。
+    private(set) var attachedMinimum: CGSize?
+
+    /// 让贴附跟上「现在选中谁、岛是什么形态」。
+    ///
+    /// 切走、收起只**藏**不还原（`hide` 等价 ⌘H，spec 6.2）：还原是把窗口放回
+    /// 用户原来摆的地方，那属于「不玩了」，只在移除 tab 和退出时做。切来切去
+    /// 每次都还原一遍的话，窗口会在屏幕上来回蹦。
+    func syncAttachment() {
+        guard let attach else { return }
+        let active = state == .expanded ? selectedTab?.appBundleID : nil
+
+        // 除了当前这个，其余贴过的都收起来。
+        for bundleID in Set(tabs.compactMap(\.appBundleID)) where bundleID != active {
+            attach.hide(bundleID: bundleID)
+        }
+
+        guard let active else {
+            attach.cancelPendingFollows()
+            return
+        }
+        attach.unhide(bundleID: active)
+        attach.attach(bundleID: active, to: metrics.contentRectOnScreen) { [weak self] result in
+            self?.apply(result)
+        }
+    }
+
+    private func apply(_ result: Result<CGRect, AttachFailure>) {
+        switch result {
+        case .success(let achieved):
+            attachFailure = nil
+            // **只有真的被钳住才记。** 实得等于要的，说明窗口压得下去，
+            // 这时候把当前尺寸当成下限的话，用户就再也拖不小了。
+            // 两个方向分开判：只钳宽不钳高是常事。
+            let asked = metrics.contentRectOnScreen
+            let width = achieved.width > asked.width + 0.5 ? achieved.width : 0
+            let height = achieved.height > asked.height + 0.5 ? achieved.height : 0
+            attachedMinimum = (width > 0 || height > 0)
+                ? CGSize(width: width, height: height) : nil
+        case .failure(let failure):
+            attachFailure = failure
+            attachedMinimum = nil
+        }
+    }
+
+    /// 拖拽时把新矩形喂给贴附的窗口。合并由 `AttachDriver` 管。
+    private func followAttachment() {
+        guard let attach, state == .expanded,
+              let bundleID = selectedTab?.appBundleID else { return }
+        attach.follow(metrics.contentRectOnScreen, bundleID: bundleID)
+    }
 
     /// 岛的圆角。**底下挂着选项浮层时，底边是接缝，圆角要收掉。**
     ///
@@ -222,6 +291,8 @@ final class IslandModel {
         let previous = state
         state = next
         onStateChanged?(previous, next)
+        // 展开/收起都会改变「窗口该不该露出来」。
+        syncAttachment()
     }
 
     private func applySideEffects(of event: IslandEvent) {
@@ -255,8 +326,22 @@ final class IslandModel {
     /// 第 2 阶段用它把尺寸写进 Application Support。
     var onExpandedSizeChanged: (() -> Void)?
 
-    var expandedWidthRange: ClosedRange<CGFloat> { metrics.expandedWidthRange }
-    var expandedContentHeightRange: ClosedRange<CGFloat> { metrics.expandedContentHeightRange }
+    /// 拖拽范围。**选中 app tab 时下限被那个窗口的最小尺寸顶起来**（spec 6.4）：
+    /// 目标窗口压不到岛这么小，与其让它溢出去错位，不如根本不让用户拖到那儿。
+    var expandedWidthRange: ClosedRange<CGFloat> {
+        raise(metrics.expandedWidthRange, to: attachedMinimum?.width)
+    }
+
+    var expandedContentHeightRange: ClosedRange<CGFloat> {
+        // 贴附的窗口占的是「内容区 + 退休的输入框那 44pt」，换算回内容区口径。
+        let floor = attachedMinimum.map { $0.height - constants.retiredInputBarHeight }
+        return raise(metrics.expandedContentHeightRange, to: floor)
+    }
+
+    private func raise(_ range: ClosedRange<CGFloat>, to floor: CGFloat?) -> ClosedRange<CGFloat> {
+        guard let floor, floor > range.lowerBound else { return range }
+        return floor...Swift.max(floor, range.upperBound)
+    }
 
     /// 拖拽手柄调用。传的是**目标绝对尺寸**，不是增量 ——
     /// 手柄自己会随岛一起移动，用增量累加必然漂。
@@ -268,6 +353,7 @@ final class IslandModel {
         expandedContentHeight = h
         runtime?.preferences.expandedSize = (w, h)
         onExpandedSizeChanged?()
+        followAttachment()
     }
 
     /// 岛主体当前的四条边在屏幕坐标里的位置（原点左下）。拖拽手柄靠它做绝对定位。
@@ -297,6 +383,9 @@ final class IslandModel {
         isComposingNewTask = false
         selectedTabID = id
         send(.tabOpened)
+        // `send` 只在状态**真的变了**的时候才走到 syncAttachment，
+        // 而 tab 之间互切通常不改变状态（一直是 expanded）。这里补一次。
+        syncAttachment()
     }
 
     /// 给 tab 改个名字。双击 tab 芯片进入编辑（spec 3.2）。
@@ -703,6 +792,11 @@ final class IslandModel {
         if hasLiveSession(id), let tab = tabs.first(where: { $0.id == id }),
            confirmCloseLiveTab?(tab) == false {
             return
+        }
+        // **移除 app tab 就是「不玩了」，窗口必须回到原位**（spec 6.3）——
+        // 挪的是别人的窗口，岛只是暂借。
+        if let bundleID = tabs.first(where: { $0.id == id })?.appBundleID {
+            attach?.restore(bundleID: bundleID)
         }
         runtime?.close(id)
         tabs.removeAll { $0.id == id }

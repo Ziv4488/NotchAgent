@@ -102,7 +102,12 @@ struct IslandMetrics {
     // MARK: - 尺寸
 
     /// `tabStripWidth` 是 tab 条内容渲染出来的实际宽度，只有 notice 态用得到。
-    func size(for state: IslandState, tabStripWidth: CGFloat = 0) -> CGSize {
+    ///
+    /// `chromeOnly` 是选中 app tab 时那一档：内容区整块让给真实窗口，
+    /// 岛只剩状态带 + tab 条。**岛体是不透明的 `.fill(.black)`**，
+    /// 不缩的话直接把贴在下面的窗口盖没了。
+    func size(for state: IslandState, tabStripWidth: CGFloat = 0,
+              chromeOnly: Bool = false) -> CGSize {
         switch state {
         case .idle:
             return CGSize(width: baseWidth + constants.idleSideBleed * 2,
@@ -121,7 +126,8 @@ struct IslandMetrics {
 
         case .expanded:
             return CGSize(width: expandedWidth,
-                          height: expandedChromeHeight + expandedContentHeight)
+                          height: chromeOnly ? chromeOnlyHeight
+                                             : expandedChromeHeight + expandedContentHeight)
         }
     }
 

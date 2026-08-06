@@ -25,7 +25,7 @@ enum AttachFailure: Error, Equatable {
 ///
 /// `original` 是这整个第 3 阶段最要紧的一个字段：spec 6.3 把「还原原始 frame」
 /// 定成硬性要求，因为挪的是**别人的**窗口，岛只是暂借。
-struct Attachment: Equatable {
+struct Attachment: Codable, Equatable {
     let bundleID: String
     /// 接管那一刻窗口的 frame，还原时设回去。
     let original: CGRect
@@ -33,7 +33,9 @@ struct Attachment: Equatable {
     var achieved: CGRect
 }
 
-@MainActor
+/// **故意不是 `@MainActor`。** 它每个方法都可能阻塞几百毫秒（spec 11.4 撞到过
+/// 一次 520ms 的 `AXSize`），放主线程上就是岛自己卡住。队列与合并由
+/// `AttachDriver` 管，这里只保证「在同一条队列上被串行调用」时是对的。
 final class WindowAttach {
     private let ax: AXBridging
     private let log = Logger(subsystem: "com.notchagent", category: "attach")
@@ -59,8 +61,30 @@ final class WindowAttach {
     /// 而那时岛根本没在管它了，再也没人还得回来。
     private var ledger: [(window: AXWindowHandle, attachment: Attachment)] = []
 
+    /// 账本变了就喊一声。**这条线是给「岛崩了怎么办」用的**：
+    /// spec 6.3 把还原定成硬性要求，可 `applicationWillTerminate` 只覆盖正常退出。
+    /// 被强杀、崩溃、断电时，用户的窗口就永远卡在岛给的尺寸上了 ——
+    /// 除非原始 frame 在磁盘上另有一份，下次启动照着还。
+    var ledgerDidChange: (([Attachment]) -> Void)?
+
     init(ax: AXBridging = SystemAXBridge()) {
         self.ax = ax
+    }
+
+    private func ledgerChanged() { ledgerDidChange?(ledger.map(\.attachment)) }
+
+    /// 认领上一轮没还回去的窗口。**尽力而为**：窗口句柄跨不了进程，
+    /// 只能按 bundle id 找到那个 app 现在的前台窗口摆回去。单窗口 app
+    /// （ChatGPT、Claude 桌面版）这就是对的；多窗口的可能还错人，
+    /// 但「还错一个窗口」也比「有个窗口永远卡在那儿」强。
+    func reclaim(_ loans: [Attachment]) {
+        guard ax.isTrusted else { return }
+        for loan in loans {
+            guard ax.isRunning(bundleID: loan.bundleID),
+                  let window = ax.focusedWindow(bundleID: loan.bundleID) else { continue }
+            ax.setFrame(loan.original, of: window)
+            log.info("清账：\(loan.bundleID, privacy: .public) 还回 \(loan.original.debugDescription, privacy: .public)")
+        }
     }
 
     var attachedCount: Int { ledger.count }
@@ -101,6 +125,7 @@ final class WindowAttach {
                                               original: original,
                                               achieved: original)))
             log.info("接管 \(bundleID, privacy: .public) 的窗口，原 frame \(original.debugDescription, privacy: .public)")
+            ledgerChanged()
         }
 
         guard let achieved = ax.setFrame(rect, of: window) else { return .failure(.noWindow) }
@@ -131,6 +156,7 @@ final class WindowAttach {
         guard !mine.isEmpty else { return false }
         for entry in mine { put(back: entry) }
         ledger.removeAll { $0.attachment.bundleID == bundleID }
+        ledgerChanged()
         return true
     }
 
@@ -138,6 +164,7 @@ final class WindowAttach {
     func restoreAll() {
         for entry in ledger { put(back: entry) }
         ledger.removeAll()
+        ledgerChanged()
     }
 
     func hide(bundleID: String) { ax.hide(bundleID: bundleID) }
