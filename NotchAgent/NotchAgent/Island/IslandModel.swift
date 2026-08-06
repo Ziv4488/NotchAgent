@@ -260,6 +260,36 @@ final class IslandModel {
         }
     }
 
+    /// 把拖进来的 `.app` 变成 tab（用户 08-07 定的入口）。
+    ///
+    /// 返回真表示收下了 —— 拖放的 API 靠这个决定要不要播那个「飞回去」的动画。
+    ///
+    /// **同一个 app 已经有 tab 了就选中它，不再建一个。** 两个 tab 指着同一个
+    /// bundle id 会互相抢那一个窗口：切到 A 贴上，切到 B 又贴一遍，
+    /// 而 B 记的「原始 frame」是 A 贴完之后的样子 —— 窗口从此回不去了。
+    @discardableResult
+    func addAppTabs(from urls: [URL]) -> Bool {
+        let apps = AppRegistry.identify(urls)
+        guard !apps.isEmpty else { return false }
+
+        for app in apps {
+            if let existing = tabs.first(where: { $0.appBundleID == app.bundleID }) {
+                selectedTabID = existing.id
+                continue
+            }
+            let tab = IslandTab(title: app.name, kind: .app(bundleID: app.bundleID),
+                                status: .done, accent: Self.accent(for: app.bundleID))
+            tabs.append(tab)
+            selectedTabID = tab.id
+        }
+        isComposingNewTask = false
+        persistTabs()
+        send(.sessionStarted)
+        // `send` 只在状态**真的变了**时才同步；已经展开着的话得自己补一次。
+        syncAttachment()
+        return true
+    }
+
     /// 拖拽时把新矩形喂给贴附的窗口。合并由 `AttachDriver` 管。
     private func followAttachment() {
         guard let attach, state == .expanded,
