@@ -62,7 +62,7 @@ struct ContentArea: View {
         guard let tab else {
             return launchError.map(Kind.launchError) ?? .noProcess
         }
-        if tab.kind == .app { return .attachedApp }
+        if tab.isApp { return .attachedApp }
         if let session, session.status.isAlive { return .terminal(session) }
         if tab.isDetached { return .detached(tab) }
         return launchError.map(Kind.launchError) ?? .noProcess

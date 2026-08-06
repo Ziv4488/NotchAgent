@@ -26,7 +26,12 @@ struct IslandTab: Identifiable, Equatable {
         /// Claude Code CLI 会话，岛内原生渲染终端。
         case cli
         /// 第三方 app，真实窗口贴附在岛下方。
-        case app
+        ///
+        /// **bundle id 就是它全部的身份。** app tab 不是会话（08-06 拍板）：
+        /// 输入、焦点、内容全归原 app，岛这边不转发任何东西，所以它既不进
+        /// `SessionStore` 也不实现 `AgentSession` —— 那套抽象里的
+        /// `start`/`write`/`resize`/`terminate` 对贴附一个窗口没有一个是成立的。
+        case app(bundleID: String)
     }
 
     enum Status: Equatable {
@@ -93,6 +98,14 @@ struct IslandTab: Identifiable, Equatable {
         self.activity = activity
         self.isDetached = isDetached
         self.endedAbnormally = endedAbnormally
+    }
+
+    /// 这是个贴附第三方 app 的 tab 吗。
+    var isApp: Bool { appBundleID != nil }
+
+    /// 贴附目标的 bundle id，CLI tab 是 nil。
+    var appBundleID: String? {
+        if case .app(let bundleID) = kind { bundleID } else { nil }
     }
 }
 
@@ -724,11 +737,16 @@ final class IslandModel {
     var tabStoreURL: URL = TabStore.fileURL
 
     /// 只存骨架。会话内容归 `~/.claude`，岛不复制一份。
+    ///
+    /// **app tab 从 08-07 起也存了。** 之前是 `filter { $0.kind == .cli }` 直接
+    /// 扔掉 —— 那时 app tab 只是个调试用的假壳，没有身份可存。现在它带着
+    /// bundle id，重启后能原样摆回来。
     func persistTabs() {
         guard runtime != nil else { return }
-        TabStore.save(tabs.filter { $0.kind == .cli }.map {
+        TabStore.save(tabs.map {
             TabSnapshot(id: $0.id, title: $0.title, directory: $0.directory,
-                        claudeSessionID: runtime?.session($0.id)?.claudeSessionID)
+                        claudeSessionID: runtime?.session($0.id)?.claudeSessionID,
+                        appBundleID: $0.appBundleID)
         }, to: tabStoreURL)
     }
 
@@ -738,9 +756,17 @@ final class IslandModel {
         let snapshots = TabStore.load(from: tabStoreURL)
         guard !snapshots.isEmpty, tabs.isEmpty else { return }
         tabs = snapshots.map {
-            IslandTab(id: $0.id, title: $0.title, kind: .cli, status: .ended,
-                      accent: Self.accent(for: $0.directory ?? $0.title),
-                      directory: $0.directory, isDetached: true)
+            // app tab 没有进程可言，**不该显示成「已结束 · 可继续」** ——
+            // 那句话说的是「进程没了，--resume 接得回去」，对贴附毫无意义。
+            // 它就是静静地摆在那儿，点一下才去接管窗口。
+            if let bundleID = $0.appBundleID {
+                return IslandTab(id: $0.id, title: $0.title,
+                                 kind: .app(bundleID: bundleID), status: .done,
+                                 accent: Self.accent(for: bundleID))
+            }
+            return IslandTab(id: $0.id, title: $0.title, kind: .cli, status: .ended,
+                             accent: Self.accent(for: $0.directory ?? $0.title),
+                             directory: $0.directory, isDetached: true)
         }
         selectedTabID = tabs.first?.id
     }
@@ -758,8 +784,9 @@ final class IslandModel {
     }
 
     /// 造一个贴附的假第三方 app tab。
-    func debugAttachApp(named name: String) {
-        let tab = IslandTab(title: name, kind: .app, status: .running, accent: Color(red: 0.06, green: 0.64, blue: 0.50))
+    func debugAttachApp(named name: String, bundleID: String = "com.openai.codex") {
+        let tab = IslandTab(title: name, kind: .app(bundleID: bundleID), status: .running,
+                            accent: Color(red: 0.06, green: 0.64, blue: 0.50))
         tabs.append(tab)
         if selectedTabID == nil { selectedTabID = tab.id }
         send(.sessionProgress)
