@@ -21,20 +21,6 @@ private func makeView(state: IslandState) -> NotchHostingView {
     return view
 }
 
-/// 展开着、选中一个 app tab 的画布。**`attach` 留空**，单测不去碰真窗口。
-@MainActor
-private func makeAppTabView() -> NotchHostingView {
-    let model = IslandModel(geometry: FakeScreenGeometry.macBook14)
-    model.tabStoreURL = URL(fileURLWithPath: NSTemporaryDirectory())
-        .appending(path: "notch-hole-\(UUID().uuidString).json")
-    model.debugAttachApp(named: "ChatGPT")
-    model.send(.click)
-    let view = NotchHostingView(rootView: IslandShell(model: model))
-    view.frame = CGRect(origin: .zero, size: model.metrics.containerFrame.size)
-    view.islandGeometry = { (model.size, model.cornerRadii) }
-    return view
-}
-
 /// `islandPath()` 用的是视图坐标系，而 `NSHostingView` 是 flipped 的。
 /// 测试不该假定方向，统一按「距画布顶部多远」来取点。
 @MainActor
@@ -160,61 +146,6 @@ struct NotchHostingViewTests {
         #expect(view.hitTest(hitPoint(view, at: CGPoint(x: frame.maxX + 20, y: frame.midY))) == nil)
     }
 
-    // MARK: - 贴附窗口那个洞
-
-    /// **点击必须漏下去给真实窗口。** 洞整个落在岛的轮廓里，`accepts` 里
-    /// 要是不先一票否决，岛就把那块地方的点击全吃了 —— 表现是窗口看得见、
-    /// 点不动，比盖住还难查。
-    @Test("窗口那块不吃点击，四周的黑边照吃")
-    func theAttachedHoleLetsClicksThrough() throws {
-        let view = makeAppTabView()
-        defer { try? FileManager.default.removeItem(at: view.rootView.model.tabStoreURL) }
-        let hole = view.attachedHoleRect()
-        try #require(!hole.isNull && !hole.isEmpty)
-
-        #expect(view.hitTest(hitPoint(view, at: CGPoint(x: hole.midX, y: hole.midY))) == nil)
-        // 左边那条黑边（bezel 是 8pt，往里 4pt 还在边上）仍归岛管。
-        #expect(view.hitTest(hitPoint(view, at: CGPoint(x: hole.minX - 4, y: hole.midY))) != nil)
-        // 洞上面的 tab 条那一带也归岛管。
-        #expect(view.hitTest(hitPoint(view, at: CGPoint(x: hole.midX, y: hole.minY - 4))) != nil)
-    }
-
-    @Test("CLI tab 不挖洞")
-    func noHoleForCLITabs() {
-        #expect(makeView(state: .expanded).attachedHoleRect().isNull)
-    }
-
-    // MARK: - 往 ＋ 面板里拖 app
-
-    /// 这一条钉的是「拖放到底挂在哪一层」。08-07 第一版挂在 SwiftUI 的
-    /// `.dropDestination` 上，实机拖不进去；改到窗口层之后，
-    /// **没有这一行登记就什么都不会发生**，而且是静悄悄的没反应。
-    @Test("画布登记了文件 URL 这个拖拽类型")
-    func registersFileURLDrags() {
-        #expect(makeView(state: .expanded).registeredDraggedTypes.contains(.fileURL))
-    }
-
-    @Test("＋ 面板开着、拖的是 app、落点在岛里 —— 收")
-    func welcomesAnAppOverTheForm() {
-        #expect(NotchHostingView.welcomesDrop(inIsland: true, isExpanded: true,
-                                              showsNewTaskForm: true, hasApps: true))
-    }
-
-    /// 四个条件各缺一次。**逐条列而不是只测一个反例**：这四条来自四个不同的
-    /// 地方（命中测试、状态机、新建流程、剪贴板），漏掉任何一条的表现都不一样
-    /// —— 少了 `inIsland` 是「岛外面的透明画布也能接」，
-    /// 少了 `hasApps` 是「拖个 .txt 进来也高亮，松手却没反应」。
-    @Test("四个条件缺一不可")
-    func everyConditionIsRequired() {
-        #expect(!NotchHostingView.welcomesDrop(inIsland: false, isExpanded: true,
-                                               showsNewTaskForm: true, hasApps: true))
-        #expect(!NotchHostingView.welcomesDrop(inIsland: true, isExpanded: false,
-                                               showsNewTaskForm: true, hasApps: true))
-        #expect(!NotchHostingView.welcomesDrop(inIsland: true, isExpanded: true,
-                                               showsNewTaskForm: false, hasApps: true))
-        #expect(!NotchHostingView.welcomesDrop(inIsland: true, isExpanded: true,
-                                               showsNewTaskForm: true, hasApps: false))
-    }
 }
 
 /// `hitTest` 的入参是父视图坐标系（y 朝上），量出来的浮层位置是画布自己的

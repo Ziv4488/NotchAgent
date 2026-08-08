@@ -294,17 +294,6 @@ struct ContentKindTests {
         }
     }
 
-    /// app tab 的内容区整块不绘制，真实窗口贴在下面（spec 3.2）。
-    @Test("app tab 什么都不画")
-    func attachedAppDrawsNothing() {
-        let kind = ContentArea.kind(tab: tab(kind: .app(bundleID: "com.openai.codex")),
-                                    session: nil, launchError: nil)
-        guard case .attachedApp = kind else {
-            Issue.record("画的是 \(kind)")
-            return
-        }
-    }
-
     /// 起不来的时候把原因摆出来，别退回一句没用的「没有活着的进程」。
     @Test("起不来就显示原因")
     func launchErrorIsShown() {

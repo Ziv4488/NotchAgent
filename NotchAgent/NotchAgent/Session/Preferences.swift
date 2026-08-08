@@ -129,13 +129,6 @@ struct TabSnapshot: Codable, Equatable {
     var directory: String?
     /// Claude Code 的 session id，用来 `--resume`。
     var claudeSessionID: String?
-    /// 第三方 app 的 bundle id。**nil 就是 CLI tab。**
-    ///
-    /// 用可选字段而不是单独存一个 `kind` 枚举，是为了**读得动旧的 tabs.json**：
-    /// 08-06 之前只存 CLI tab，文件里根本没有这个键，而 Codable 合成的解码器
-    /// 对可选属性走的是 `decodeIfPresent` —— 旧文件解出来正好是 nil，也正好是
-    /// 「这是 CLI tab」。多一个枚举就得手写 `init(from:)` 兜住缺键。
-    var appBundleID: String?
 }
 
 enum TabStore {

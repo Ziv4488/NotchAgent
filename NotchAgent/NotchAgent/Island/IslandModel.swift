@@ -25,13 +25,6 @@ struct IslandTab: Identifiable, Equatable {
     enum Kind: Equatable {
         /// Claude Code CLI 会话，岛内原生渲染终端。
         case cli
-        /// 第三方 app，真实窗口贴附在岛下方。
-        ///
-        /// **bundle id 就是它全部的身份。** app tab 不是会话（08-06 拍板）：
-        /// 输入、焦点、内容全归原 app，岛这边不转发任何东西，所以它既不进
-        /// `SessionStore` 也不实现 `AgentSession` —— 那套抽象里的
-        /// `start`/`write`/`resize`/`terminate` 对贴附一个窗口没有一个是成立的。
-        case app(bundleID: String)
     }
 
     enum Status: Equatable {
@@ -100,13 +93,6 @@ struct IslandTab: Identifiable, Equatable {
         self.endedAbnormally = endedAbnormally
     }
 
-    /// 这是个贴附第三方 app 的 tab 吗。
-    var isApp: Bool { appBundleID != nil }
-
-    /// 贴附目标的 bundle id，CLI tab 是 nil。
-    var appBundleID: String? {
-        if case .app(let bundleID) = kind { bundleID } else { nil }
-    }
 }
 
 @Observable
@@ -200,110 +186,6 @@ final class IslandModel {
         metrics.size(for: state, tabStripWidth: tabStripWidth)
     }
 
-    /// 选中的是个贴附第三方 app 的 tab 吗。
-    var selectedTabIsApp: Bool { selectedTab?.isApp == true }
-
-    /// 岛此刻要在内容区挖的那个洞，**岛画布坐标**（原点左上）。
-    /// 空矩形表示不挖 —— 只有「展开着，而且选中的是 app tab」时才挖。
-    var attachedHoleInIsland: CGRect {
-        guard state == .expanded, selectedTabIsApp else { return .zero }
-        return metrics.attachedHoleInIsland
-    }
-
-    // MARK: - 贴附第三方 app（spec 6）
-
-    /// 贴附那一层。**nil 就是不接** —— 预览和单测默认不去碰真窗口。
-    var attach: AttachDriver?
-
-    /// 贴附出岔子了。内容区拿它画占位卡（没授权时引导去系统设置）。
-    private(set) var attachFailure: AttachFailure?
-
-    /// 目标窗口压不下去的那个尺寸。
-    ///
-    /// spec 6.4 原本写的是「压不住就把岛加宽」，那是事后补救；实测下来更干净的
-    /// 做法是**反过来钉住拖拽下限** —— 根本不让用户拖到窗口做不到的尺寸去。
-    /// 这个数问不出来，只能设完读回（spec 11.4），所以它来自 attach 的返回值。
-    private(set) var attachedMinimum: CGSize?
-
-    /// 让贴附跟上「现在选中谁、岛是什么形态」。
-    ///
-    /// 切走、收起只**藏**不还原（`hide` 等价 ⌘H，spec 6.2）：还原是把窗口放回
-    /// 用户原来摆的地方，那属于「不玩了」，只在移除 tab 和退出时做。切来切去
-    /// 每次都还原一遍的话，窗口会在屏幕上来回蹦。
-    func syncAttachment() {
-        guard let attach else { return }
-        let active = state == .expanded ? selectedTab?.appBundleID : nil
-
-        // 除了当前这个，其余贴过的都收起来。
-        for bundleID in Set(tabs.compactMap(\.appBundleID)) where bundleID != active {
-            attach.hide(bundleID: bundleID)
-        }
-
-        guard let active else {
-            attach.cancelPendingFollows()
-            return
-        }
-        attach.unhide(bundleID: active)
-        attach.attach(bundleID: active, to: metrics.attachedWindowRect) { [weak self] result in
-            self?.apply(result)
-        }
-    }
-
-    private func apply(_ result: Result<CGRect, AttachFailure>) {
-        switch result {
-        case .success(let achieved):
-            attachFailure = nil
-            // **只有真的被钳住才记。** 实得等于要的，说明窗口压得下去，
-            // 这时候把当前尺寸当成下限的话，用户就再也拖不小了。
-            // 两个方向分开判：只钳宽不钳高是常事。
-            let asked = metrics.attachedWindowRect
-            let width = achieved.width > asked.width + 0.5 ? achieved.width : 0
-            let height = achieved.height > asked.height + 0.5 ? achieved.height : 0
-            attachedMinimum = (width > 0 || height > 0)
-                ? CGSize(width: width, height: height) : nil
-        case .failure(let failure):
-            attachFailure = failure
-            attachedMinimum = nil
-        }
-    }
-
-    /// 把拖进来的 `.app` 变成 tab（用户 08-07 定的入口）。
-    ///
-    /// 返回真表示收下了 —— 拖放的 API 靠这个决定要不要播那个「飞回去」的动画。
-    ///
-    /// **同一个 app 已经有 tab 了就选中它，不再建一个。** 两个 tab 指着同一个
-    /// bundle id 会互相抢那一个窗口：切到 A 贴上，切到 B 又贴一遍，
-    /// 而 B 记的「原始 frame」是 A 贴完之后的样子 —— 窗口从此回不去了。
-    @discardableResult
-    func addAppTabs(from urls: [URL]) -> Bool {
-        let apps = AppRegistry.identify(urls)
-        guard !apps.isEmpty else { return false }
-
-        for app in apps {
-            if let existing = tabs.first(where: { $0.appBundleID == app.bundleID }) {
-                selectedTabID = existing.id
-                continue
-            }
-            let tab = IslandTab(title: app.name, kind: .app(bundleID: app.bundleID),
-                                status: .done, accent: Self.accent(for: app.bundleID))
-            tabs.append(tab)
-            selectedTabID = tab.id
-        }
-        isComposingNewTask = false
-        persistTabs()
-        send(.sessionStarted)
-        // `send` 只在状态**真的变了**时才同步；已经展开着的话得自己补一次。
-        syncAttachment()
-        return true
-    }
-
-    /// 拖拽时把新矩形喂给贴附的窗口。合并由 `AttachDriver` 管。
-    private func followAttachment() {
-        guard let attach, state == .expanded,
-              let bundleID = selectedTab?.appBundleID else { return }
-        attach.follow(metrics.attachedWindowRect, bundleID: bundleID)
-    }
-
     /// 岛的圆角。**底下挂着选项浮层时，底边是接缝，圆角要收掉。**
     ///
     /// 留着圆角的话接缝两侧会各露一个小缺口；用浮层的背景往上盖住那两块，
@@ -328,8 +210,6 @@ final class IslandModel {
         let previous = state
         state = next
         onStateChanged?(previous, next)
-        // 展开/收起都会改变「窗口该不该露出来」。
-        syncAttachment()
     }
 
     private func applySideEffects(of event: IslandEvent) {
@@ -363,27 +243,9 @@ final class IslandModel {
     /// 第 2 阶段用它把尺寸写进 Application Support。
     var onExpandedSizeChanged: (() -> Void)?
 
-    /// 拖拽范围。**选中 app tab 时下限被那个窗口的最小尺寸顶起来**（spec 6.4）：
-    /// 目标窗口压不到岛这么小，与其让它溢出去错位，不如根本不让用户拖到那儿。
-    /// **`attachedMinimum` 是那个窗口的下限，不是岛的。** 窗口四周还有一圈黑边，
-    /// 所以岛要比它宽 / 高出 `attachBezel` 的两倍，换算这一下不能省。
-    var expandedWidthRange: ClosedRange<CGFloat> {
-        let floor = attachedMinimum.map { $0.width + constants.attachBezel * 2 }
-        return raise(metrics.expandedWidthRange, to: floor)
-    }
+    var expandedWidthRange: ClosedRange<CGFloat> { metrics.expandedWidthRange }
 
-    var expandedContentHeightRange: ClosedRange<CGFloat> {
-        // 岛的内容区 = 窗口 + 上下两条黑边 + 退休的输入框那 44pt，换算回内容区口径。
-        let floor = attachedMinimum.map {
-            $0.height + constants.attachBezel * 2 - constants.retiredInputBarHeight
-        }
-        return raise(metrics.expandedContentHeightRange, to: floor)
-    }
-
-    private func raise(_ range: ClosedRange<CGFloat>, to floor: CGFloat?) -> ClosedRange<CGFloat> {
-        guard let floor, floor > range.lowerBound else { return range }
-        return floor...Swift.max(floor, range.upperBound)
-    }
+    var expandedContentHeightRange: ClosedRange<CGFloat> { metrics.expandedContentHeightRange }
 
     /// 拖拽手柄调用。传的是**目标绝对尺寸**，不是增量 ——
     /// 手柄自己会随岛一起移动，用增量累加必然漂。
@@ -395,7 +257,6 @@ final class IslandModel {
         expandedContentHeight = h
         runtime?.preferences.expandedSize = (w, h)
         onExpandedSizeChanged?()
-        followAttachment()
     }
 
     /// 岛主体当前的四条边在屏幕坐标里的位置（原点左下）。拖拽手柄靠它做绝对定位。
@@ -425,9 +286,6 @@ final class IslandModel {
         isComposingNewTask = false
         selectedTabID = id
         send(.tabOpened)
-        // `send` 只在状态**真的变了**的时候才走到 syncAttachment，
-        // 而 tab 之间互切通常不改变状态（一直是 expanded）。这里补一次。
-        syncAttachment()
     }
 
     /// 给 tab 改个名字。双击 tab 芯片进入编辑（spec 3.2）。
@@ -649,12 +507,6 @@ final class IslandModel {
     /// `NotchHostingView` 拿它去登记 cursor rect（光标形状），见那边的注释。
     var resizeHandleFrames: [ResizeHandles.Kind: CGRect] = [:]
 
-    /// 正拖着一个 `.app` 悬在岛上。＋ 面板据此画那圈虚线（`NewTaskForm.dropHint`）。
-    ///
-    /// **这一位由窗口层写，不是 SwiftUI 写的。** 拖放走的是
-    /// `NotchHostingView` 上的 `NSDraggingDestination`，理由见那边。
-    var isDropTargeted = false
-
     /// 选中的那个 tab 现在有没有在问你。**只在收起态给** ——
     /// 展开时终端本身就摆着那个选单，再叠一层浮层是两份同样的东西。
     var pendingMenu: TerminalMenu? {
@@ -841,11 +693,6 @@ final class IslandModel {
            confirmCloseLiveTab?(tab) == false {
             return
         }
-        // **移除 app tab 就是「不玩了」，窗口必须回到原位**（spec 6.3）——
-        // 挪的是别人的窗口，岛只是暂借。
-        if let bundleID = tabs.first(where: { $0.id == id })?.appBundleID {
-            attach?.restore(bundleID: bundleID)
-        }
         runtime?.close(id)
         tabs.removeAll { $0.id == id }
         if selectedTabID == id { selectedTabID = tabs.first?.id }
@@ -880,15 +727,11 @@ final class IslandModel {
 
     /// 只存骨架。会话内容归 `~/.claude`，岛不复制一份。
     ///
-    /// **app tab 从 08-07 起也存了。** 之前是 `filter { $0.kind == .cli }` 直接
-    /// 扔掉 —— 那时 app tab 只是个调试用的假壳，没有身份可存。现在它带着
-    /// bundle id，重启后能原样摆回来。
     func persistTabs() {
         guard runtime != nil else { return }
         TabStore.save(tabs.map {
             TabSnapshot(id: $0.id, title: $0.title, directory: $0.directory,
-                        claudeSessionID: runtime?.session($0.id)?.claudeSessionID,
-                        appBundleID: $0.appBundleID)
+                        claudeSessionID: runtime?.session($0.id)?.claudeSessionID)
         }, to: tabStoreURL)
     }
 
@@ -898,17 +741,9 @@ final class IslandModel {
         let snapshots = TabStore.load(from: tabStoreURL)
         guard !snapshots.isEmpty, tabs.isEmpty else { return }
         tabs = snapshots.map {
-            // app tab 没有进程可言，**不该显示成「已结束 · 可继续」** ——
-            // 那句话说的是「进程没了，--resume 接得回去」，对贴附毫无意义。
-            // 它就是静静地摆在那儿，点一下才去接管窗口。
-            if let bundleID = $0.appBundleID {
-                return IslandTab(id: $0.id, title: $0.title,
-                                 kind: .app(bundleID: bundleID), status: .done,
-                                 accent: Self.accent(for: bundleID))
-            }
-            return IslandTab(id: $0.id, title: $0.title, kind: .cli, status: .ended,
-                             accent: Self.accent(for: $0.directory ?? $0.title),
-                             directory: $0.directory, isDetached: true)
+            IslandTab(id: $0.id, title: $0.title, kind: .cli, status: .ended,
+                      accent: Self.accent(for: $0.directory ?? $0.title),
+                      directory: $0.directory, isDetached: true)
         }
         selectedTabID = tabs.first?.id
     }
@@ -923,15 +758,6 @@ final class IslandModel {
         tabs.append(tab)
         if selectedTabID == nil { selectedTabID = tab.id }
         send(.sessionStarted)
-    }
-
-    /// 造一个贴附的假第三方 app tab。
-    func debugAttachApp(named name: String, bundleID: String = "com.openai.codex") {
-        let tab = IslandTab(title: name, kind: .app(bundleID: bundleID), status: .running,
-                            accent: Color(red: 0.06, green: 0.64, blue: 0.50))
-        tabs.append(tab)
-        if selectedTabID == nil { selectedTabID = tab.id }
-        send(.sessionProgress)
     }
 
     /// 让最早那个还在跑的会话停下来问你 —— 用来看「询问」态长什么样。
@@ -955,12 +781,10 @@ final class IslandModel {
         case .notice:
             debugStartSession(named: "refactor-auth")
             debugStartSession(named: "写测试")
-            debugAttachApp(named: "ChatGPT")
             debugFinishOldestRunning()
         case .expanded:
             debugStartSession(named: "refactor-auth")
             debugStartSession(named: "写测试")
-            debugAttachApp(named: "ChatGPT")
             send(.click)
         }
     }

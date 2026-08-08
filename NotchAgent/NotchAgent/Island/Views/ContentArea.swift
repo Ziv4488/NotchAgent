@@ -2,8 +2,7 @@
 //  ContentArea.swift
 //  NotchAgent
 //
-//  展开态的内容区：CLI tab 放真实终端，app tab 整块不绘制、
-//  把真实窗口贴在下面（第 3 阶段）。
+//  展开态的内容区：放真实终端。
 //
 
 import SwiftUI
@@ -18,9 +17,6 @@ struct ContentArea: View {
     var body: some View {
         Group {
             switch Self.kind(tab: tab, session: session, launchError: model.launchError) {
-            case .attachedApp:
-                // app tab：内容区和输入框整体不绘制，真实窗口贴在 tab 条下方（spec 3.2）。
-                Color.clear
             case .terminal(let session):
                 terminal(session)
             case .detached(let tab):
@@ -42,7 +38,6 @@ struct ContentArea: View {
 
     /// 这个 tab 的内容区该画什么。
     enum Kind {
-        case attachedApp
         case terminal(CLISession)
         case detached(IslandTab)
         case launchError(String)
@@ -62,7 +57,6 @@ struct ContentArea: View {
         guard let tab else {
             return launchError.map(Kind.launchError) ?? .noProcess
         }
-        if tab.isApp { return .attachedApp }
         if let session, session.status.isAlive { return .terminal(session) }
         if tab.isDetached { return .detached(tab) }
         return launchError.map(Kind.launchError) ?? .noProcess

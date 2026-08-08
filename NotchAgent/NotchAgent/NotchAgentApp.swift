@@ -47,9 +47,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         runtime.start()
         model.attach(runtime: runtime)
-        model.attach = AttachDriver()
-        // 上一轮没还回去的窗口（岛崩了 / 被强杀）先清账，见 spec 6.3。
-        model.attach?.reclaimOutstanding()
 
         // 手动测试用：--args -debugTask <目录> 直接在该目录起一个**真**会话并展开，
         // 免得每次都要走菜单 → 选目录 → 打字。和上面的 -debugState 是两回事：
@@ -110,10 +107,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         model.persistTabs()
-        // **必须在 shutdown 之前、并且是同步的。** 挪的是别人的窗口（spec 6.3）；
-        // 异步派出去的话 app 在队列跑到之前就没了，用户的 ChatGPT 会永远留在
-        // 岛底下那个尺寸上。
-        model.attach?.restoreAllSynchronously()
         runtime.shutdown()
     }
 
@@ -140,7 +133,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (title, selector) in [
             ("新建假会话 refactor-auth", #selector(debugStartA)),
             ("新建假会话 写测试", #selector(debugStartB)),
-            ("贴附 ChatGPT", #selector(debugAttach)),
             ("最早的会话开始问你", #selector(debugAsk)),
             ("完成最早的会话", #selector(debugFinish)),
             ("展开", #selector(debugExpand)),
@@ -309,7 +301,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func newTask() { model.beginNewTask() }
     @objc private func debugStartA() { model.debugStartSession(named: "refactor-auth") }
     @objc private func debugStartB() { model.debugStartSession(named: "写测试") }
-    @objc private func debugAttach() { model.debugAttachApp(named: "ChatGPT") }
     @objc private func debugAsk() { model.debugAskOldestRunning() }
     @objc private func debugFinish() { model.debugFinishOldestRunning() }
     @objc private func debugExpand() { model.send(.click) }

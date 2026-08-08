@@ -17,14 +17,6 @@ struct NewTaskForm: View {
     var bottomInset: CGFloat = 0
     var onSubmit: (ProjectDirectory, String) -> Void
     var onCancel: () -> Void
-    /// 正拖着 `.app` 悬在岛上。**这一位从窗口层来，不是这儿量的** ——
-    /// 拖放走 `NotchHostingView` 的 `NSDraggingDestination`（理由见那边）。
-    ///
-    /// 入口做成拖放而不是菜单项（用户 08-07）：菜单那条是「先想好要贴谁」，
-    /// 拖进来是「看见什么贴什么」。plan 3.1 原本写的是「在设置里选一个 .app」，
-    /// 那时还没有 ＋ 这个面板可用。
-    var isDropTargeted = false
-
     @State private var selected: ProjectDirectory?
     @State private var instruction = ""
     @FocusState private var instructionFocused: Bool
@@ -62,40 +54,11 @@ struct NewTaskForm: View {
             instructionField
         }
         .background { PanelCard() }
-        .overlay { dropHint }
         .padding(.horizontal, PanelCard.inset)
         .padding(.bottom, bottomInset)
         .onAppear {
             selected = projects.first
             focusInstruction()
-        }
-    }
-
-    /// 拖着 app 悬在表单上时才画。
-    ///
-    /// **平时不占地方**：这张表单主业是「选目录起会话」，为一个次要入口常驻
-    /// 一行提示会把列表挤掉一格。悬停那一刻再说话就够了 —— 那时用户手里
-    /// 正拖着东西，他要的只是「松手行不行」这一个确认。
-    @ViewBuilder
-    private var dropHint: some View {
-        if isDropTargeted {
-            RoundedRectangle(cornerRadius: PanelCard.cardRadius, style: .continuous)
-                .fill(theme.background.swiftUIColor.opacity(0.92))
-                .overlay {
-                    RoundedRectangle(cornerRadius: PanelCard.cardRadius, style: .continuous)
-                        .strokeBorder(theme.onSurfaceDim, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                }
-                .overlay {
-                    VStack(spacing: 4) {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 16))
-                        Text("松手把它贴进岛里")
-                            .font(IslandTheme.bodyFont)
-                    }
-                    .foregroundStyle(theme.onSurfaceBright)
-                }
-                .padding(.horizontal, PanelCard.inset)
-                .allowsHitTesting(false)
         }
     }
 

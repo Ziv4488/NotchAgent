@@ -8,7 +8,6 @@
 //
 
 import AppKit
-import OSLog
 import SwiftUI
 
 // 不是 `final`：`ResizeCursorTests` 要继承它、盖住 `addCursorRect` 抄一份参数。
@@ -21,12 +20,8 @@ class NotchHostingView: NSHostingView<IslandShell> {
         (.zero, IslandCornerRadii(bottom: 0, inverted: 0))
     }
 
-    private let log = Logger(subsystem: "com.notchagent", category: "drop")
-
     required init(rootView: IslandShell) {
         super.init(rootView: rootView)
-        // 往 ＋ 面板里拖 `.app`（见下面「拖放」那一节）。
-        registerForDraggedTypes([.fileURL])
     }
 
     @available(*, unavailable)
@@ -60,10 +55,6 @@ class NotchHostingView: NSHostingView<IslandShell> {
     ///    命中测试三处口径分开算，迟早有一处对不上，而对不上的表现正是
     ///    「看着能拖，按下去没反应」。收起态没有手柄，字典是空的，这条恒为假。
     func accepts(_ pointInView: NSPoint) -> Bool {
-        // **洞先判，而且是一票否决。** 它整个落在岛的轮廓里，顺序反过来的话
-        // 下面那句先把它认成「岛的地盘」放行了 —— 表现就是贴附的窗口看得见、
-        // 点不动，点击全被岛吃掉。
-        if attachedHoleRect().contains(pointInView) { return false }
         if islandPath().contains(pointInView) || menuRect().contains(pointInView) { return true }
         return rootView.model.resizeHandleFrames.values
             .contains { !$0.isEmpty && $0.contains(pointInView) }
@@ -86,86 +77,6 @@ class NotchHostingView: NSHostingView<IslandShell> {
         for (kind, frame) in rootView.model.resizeHandleFrames where !frame.isEmpty {
             addCursorRect(frame, cursor: kind.cursor)
         }
-    }
-
-    // MARK: - 拖放
-
-    /// 拖放**不走 SwiftUI 的 `.dropDestination`**，在这一层用 AppKit 原生的
-    /// `NSDraggingDestination` 接。
-    ///
-    /// 08-07 实机第一版是 `NewTaskForm` 上挂 `.dropDestination(for: URL.self)`，
-    /// 用户报「拖不进去」。那条路上叠着两个各自都会坏的环节：
-    ///
-    /// 1. `URL` 的 `Transferable` 认的是 `public.url`，而访达送过来的是
-    ///    `public.file-url`；
-    /// 2. 岛是 `.nonactivatingPanel`、层级压在菜单栏之上，SwiftUI 那层收不收得到
-    ///    拖拽，本来就没验过。
-    ///
-    /// 直接读剪贴板把第 1 条整个绕开；落在窗口层则让第 2 条变得**可观测** ——
-    /// 下面每一步都记日志（`log stream --predicate 'category == "drop"'`），
-    /// 要是连 `draggingEntered` 都不来，那就断定是窗口本身收不到，
-    /// 而不必再猜是哪一层把它吃了。
-    ///
-    /// 命中测试这一关是过得去的：`hitTest` 只放行岛的轮廓，而 ＋ 面板画在轮廓里。
-    private var draggedApps: [AttachableApp] = []
-
-    /// 这一下拖拽收不收。**拆出来是为了能测** —— `NSDraggingInfo` 是协议，
-    /// 造假的成本远高于把判据本身拎出来，而会写错的正是判据。
-    static func welcomesDrop(inIsland: Bool, isExpanded: Bool,
-                             showsNewTaskForm: Bool, hasApps: Bool) -> Bool {
-        inIsland && isExpanded && showsNewTaskForm && hasApps
-    }
-
-    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        let urls = AppRegistry.fileURLs(on: sender.draggingPasteboard)
-        // 认一次就存着：`draggingUpdated` 每动一下就来一发，
-        // 每发都去 `Bundle(url:)` 读一遍 Info.plist 是在拖拽路径上做磁盘 IO。
-        draggedApps = AppRegistry.identify(urls)
-        log.info("拖进来了：\(urls.count) 个 URL，认出 \(self.draggedApps.count) 个 app")
-        return operation(for: sender)
-    }
-
-    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        operation(for: sender)
-    }
-
-    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
-        endDrag()
-    }
-
-    override func draggingEnded(_ sender: any NSDraggingInfo) {
-        endDrag()
-    }
-
-    override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        !operation(for: sender).isEmpty
-    }
-
-    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        let urls = AppRegistry.fileURLs(on: sender.draggingPasteboard)
-        endDrag()
-        let took = rootView.model.addAppTabs(from: urls)
-        log.info("松手：收下了 \(took ? "是" : "否")")
-        return took
-    }
-
-    /// 指针此刻这一点该给什么操作，顺带把高亮那一位同步过去。
-    private func operation(for sender: any NSDraggingInfo) -> NSDragOperation {
-        let point = convert(sender.draggingLocation, from: nil)
-        let model = rootView.model
-        let welcome = Self.welcomesDrop(inIsland: islandPath().contains(point),
-                                        isExpanded: model.state == .expanded,
-                                        showsNewTaskForm: model.showsNewTaskForm,
-                                        hasApps: !draggedApps.isEmpty)
-        model.isDropTargeted = welcome
-        return welcome ? .copy : []
-    }
-
-    /// 拖拽收场（松手、拖出去、被取消）都要把高亮收掉，一处也不能漏 ——
-    /// 漏一处就是那圈虚线永远留在面板上。
-    private func endDrag() {
-        rootView.model.isDropTargeted = false
-        draggedApps = []
     }
 
     // MARK: - 非 key 状态下的光标
@@ -292,24 +203,6 @@ class NotchHostingView: NSHostingView<IslandShell> {
         super.layout()
         window?.invalidateCursorRects(for: self)
         updateTrackingAreas()
-    }
-
-    /// 岛给贴附窗口挖的那个洞，转换到本视图坐标系。没贴东西时是空矩形。
-    ///
-    /// **和 `islandPath()` 走完全相同的那一下换算**（同样的 `originX`、
-    /// 同样按 `isFlipped` 分两支）—— 洞是画在岛体上的，两边各算一套的话
-    /// 迟早差出几个点，而差出来的表现是「窗口边上一条缝点不动」。
-    func attachedHoleRect() -> CGRect {
-        let hole = rootView.model.attachedHoleInIsland
-        guard !hole.isEmpty else { return .null }
-
-        let (size, radii) = islandGeometry()
-        let originX = bounds.midX - (size.width + radii.inverted * 2) / 2
-        guard isFlipped else {
-            return CGRect(x: originX + hole.minX, y: bounds.maxY - hole.maxY,
-                          width: hole.width, height: hole.height)
-        }
-        return hole.offsetBy(dx: originX, dy: bounds.minY)
     }
 
     /// 选项浮层占的那块。没有浮层时是空矩形，`contains` 恒为假。

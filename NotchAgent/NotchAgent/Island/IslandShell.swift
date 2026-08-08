@@ -120,10 +120,7 @@ struct IslandShell: View {
         let outline = NotchShape(bottomRadius: radii.bottom,
                                  invertedRadius: radii.inverted,
                                  closesTop: false)
-        // 选中 app tab 时中间挖掉一块给真实窗口露出来，四周剩下的黑就是那圈边框。
-        let body = IslandBody(bottomRadius: radii.bottom, invertedRadius: radii.inverted,
-                              hole: model.attachedHoleInIsland,
-                              holeRadius: model.constants.attachHoleRadius)
+        let body = IslandBody(bottomRadius: radii.bottom, invertedRadius: radii.inverted)
         return body
             .fill(.black, style: FillStyle(eoFill: true))
             .overlay {
@@ -170,17 +167,12 @@ struct IslandShell: View {
             }
 
             if model.state == .expanded {
-                if model.selectedTabIsApp {
-                    // 这块地方归贴在下面的真实窗口。岛在背景里已经把它挖空了
-                    // （`IslandBody.hole`），这一层要是画点什么就正好糊在窗口上。
-                    Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if model.showsNewTaskForm {
+                if model.showsNewTaskForm {
                     NewTaskForm(projects: model.projects,
                                 error: model.launchError,
                                 bottomInset: PanelCard.bottomInset,
                                 onSubmit: { model.startTask(in: $0, instruction: $1) },
-                                onCancel: model.cancelNewTask,
-                                isDropTargeted: model.isDropTargeted)
+                                onCancel: model.cancelNewTask)
                         .transition(.opacity)
                 } else {
                     // **展开态底下就这一层，内容区自己铺满。**
