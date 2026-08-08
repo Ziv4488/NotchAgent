@@ -647,8 +647,10 @@ struct IslandPixelTests {
     @Test("悬停只让岛亮一点点，形状不动")
     func hoverOnlyBrightensTheIsland() throws {
         let idle = IslandModel.previewModel(state: .idle)
+        idle.hoverBehavior = .highlight
         let hovered = IslandModel.previewModel(state: .idle)
         hovered.isHovering = true
+        hovered.hoverBehavior = .highlight
 
         let size = canvas(around: idle)
         let plain = try raster(IslandShell(model: idle), size: size)

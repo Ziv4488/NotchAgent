@@ -77,7 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = "还有任务在跑"
-        alert.informativeText = "退出会终止所有正在运行的 Claude Code 会话。会话记录留在 ~/.claude，下次可以继续。"
+        alert.informativeText = "退出会终止所有正在运行的终端会话。"
         alert.addButton(withTitle: "退出并终止")
         alert.addButton(withTitle: "取消")
         alert.alertStyle = .warning
@@ -97,8 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static func confirmCloseLiveTab(_ tab: IslandTab) -> Bool {
         let alert = NSAlert()
         alert.messageText = "「\(tab.title)」还在跑"
-        alert.informativeText = "关掉这个 tab 会终止它的 Claude Code 会话。"
-            + "会话记录留在 ~/.claude，之后还能用「继续上次会话」接回去。"
+        alert.informativeText = "关掉这个 tab 会终止它的终端进程。"
         alert.addButton(withTitle: "关掉并终止")
         alert.addButton(withTitle: "取消")
         alert.alertStyle = .warning
@@ -160,12 +159,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let view = PreferencesView(
-            claudeAutoStatus: claudeAutoStatus,
             onRestyleTerminals: { [weak self] in
                 self?.runtime.restyleTerminals()
-            },
-            onRelocateClaude: { [weak self] in
-                self?.runtime.relocate()
             },
             onHoverBehaviorChanged: { [weak self] behavior in
                 self?.model.hoverBehavior = behavior
@@ -187,13 +182,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         preferencesWindow = window
-    }
-
-    private var claudeAutoStatus: String {
-        switch runtime.location {
-        case .found(let path, _): "自动检测到: \(path)"
-        case .notFound: "⚠ 未找到 claude 命令"
-        }
     }
 
     @objc private func newTask() { model.beginNewTask() }

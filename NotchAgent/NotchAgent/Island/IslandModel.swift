@@ -331,7 +331,7 @@ final class IslandModel {
         isComposingNewTask = false
     }
 
-    /// 真的起一个 `claude`。
+    /// 在选中的目录里开一个 shell。命令非空时当作第一条命令打进去。
     ///
     /// 起不来时**不建 tab**，只把错误挂出去 —— 建一个永远不会有内容的空 tab
     /// 比什么都不建更糟：用户会以为它在跑。

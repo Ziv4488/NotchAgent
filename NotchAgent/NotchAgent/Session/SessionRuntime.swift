@@ -18,6 +18,7 @@ final class SessionRuntime {
     let preferences: Preferences
 
     /// `claude` 在哪、以及登录 shell 的 PATH。启动时解析一次。
+    /// 现在不再用它来决定能不能起终端 —— 终端跑的是 shell，不是 claude。
     private(set) var location: ClaudeLocator.Result = .notFound(searchPath: "")
 
     /// hook 通道**没起来**时的原因，起来了就是 nil（spec 6.4 那条降级）。
@@ -53,8 +54,10 @@ final class SessionRuntime {
         case .found(let path, _):
             log.info("claude: \(path, privacy: .public)")
         case .notFound(let searchPath):
-            log.error("PATH 里找不到 claude：\(searchPath, privacy: .public)")
+            log.info("PATH 里没找到 claude（用户可以在 shell 里自己装）：\(searchPath, privacy: .public)")
         }
+
+        writeClaudeWrapper()
 
         bridge.onEvent = { [weak self] event, declaredTab in
             self?.handle(event, declaredTab: declaredTab)
@@ -88,6 +91,7 @@ final class SessionRuntime {
 
     func relocate() {
         location = ClaudeLocator(override: preferences.claudePath).locate()
+        writeClaudeWrapper()
     }
 
     /// 岛起的 claude 在命令行里长什么样。抽出来是为了能单测。
@@ -98,36 +102,62 @@ final class SessionRuntime {
     /// 收尾用。单测替换成假的，免得真去 pgrep。
     var reaper = SessionReaper()
 
-    // MARK: - 起会话
+    // MARK: - claude 包装脚本
 
-    enum LaunchError: LocalizedError {
-        case claudeNotFound(searchPath: String)
+    static var wrapperBinDir: URL {
+        HookBridge.supportDirectory.appending(path: "bin")
+    }
 
-        var errorDescription: String? {
-            switch self {
-            case .claudeNotFound:
-                "找不到 claude 命令。请在设置里手填它的绝对路径。"
-            }
+    /// 在 `Application Support/NotchAgent/bin/` 下放一个 `claude` 脚本，
+    /// 把 `--settings` 透明地带上。shell 的 PATH 里这个目录排在最前面，
+    /// 用户在岛里敲 `claude` 就会走这个包装；包装自己把自己从 PATH 里摘掉
+    /// 再 exec 真正的 claude，不会递归。
+    private func writeClaudeWrapper() {
+        let binDir = Self.wrapperBinDir
+        let wrapperURL = binDir.appending(path: "claude")
+        let script = """
+        #!/bin/sh
+        # NotchAgent: transparently forward Claude Code hooks to the island.
+        _d="$(cd "$(dirname "$0")" && pwd)"
+        _p=""; _s="$IFS"; IFS=:
+        for _x in $PATH; do [ "$_x" != "$_d" ] && _p="${_p:+$_p:}$_x"; done
+        IFS="$_s"
+        if [ -n "$NOTCH_SETTINGS" ]; then
+          exec env PATH="$_p" claude --settings "$NOTCH_SETTINGS" "$@"
+        else
+          exec env PATH="$_p" claude "$@"
+        fi
+        """
+        do {
+            try FileManager.default.createDirectory(at: binDir, withIntermediateDirectories: true)
+            try script.write(to: wrapperURL, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: wrapperURL.path)
+        } catch {
+            log.error("写 claude 包装脚本失败：\(error.localizedDescription, privacy: .public)")
         }
     }
+
+    /// 登录 shell 的 PATH，不管 claude 有没有找到都能用。
+    private var resolvedSearchPath: String {
+        switch location {
+        case .found(_, let searchPath): searchPath
+        case .notFound(let searchPath): searchPath
+        }
+    }
+
+    // MARK: - 起会话
 
     @discardableResult
     func launch(id: SessionID = UUID(), title: String, directory: URL?,
                 instruction: String?, resume: Bool = false) throws -> CLISession {
-        guard case .found(let executable, let searchPath) = location else {
-            if case .notFound(let searchPath) = location {
-                throw LaunchError.claudeNotFound(searchPath: searchPath)
-            }
-            throw LaunchError.claudeNotFound(searchPath: "")
-        }
+        let shellPath = Self.wrapperBinDir.path + ":" + resolvedSearchPath
 
         let session = CLISession(
             id: id,
             title: title,
             workingDirectory: directory,
-            launch: .claude(executable: executable, searchPath: searchPath,
-                            settingsURL: bridge.settingsURL,
-                            instruction: instruction, resume: resume))
+            launch: .shell(searchPath: shellPath, settingsURL: bridge.settingsURL))
         session.callbacks.onStatusChanged = { [weak self] id, status in
             self?.onStatusChanged?(id, status)
         }
@@ -141,6 +171,21 @@ final class SessionRuntime {
         }
         store.add(session)
         try session.start()
+
+        let command: String? = if resume {
+            "claude --resume"
+        } else if let instruction, !instruction.isEmpty {
+            instruction
+        } else {
+            nil
+        }
+        if let command {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
+                session.write(command + "\r")
+            }
+        }
+
         return session
     }
 

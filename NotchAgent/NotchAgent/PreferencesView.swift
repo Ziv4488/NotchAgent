@@ -2,8 +2,8 @@
 //  PreferencesView.swift
 //  NotchAgent
 //
-//  偏好设置面板（plan 4.2）。把菜单里的终端主题 / 字号 / 字体三项搬进来，
-//  再加上 claude 路径和悬停行为。引擎（ThemeStore / Preferences）不用重写。
+//  偏好设置面板（plan 4.2）。终端主题 / 字号 / 字体 + 悬停行为。
+//  引擎（ThemeStore / Preferences）不用重写。
 //
 
 import SwiftUI
@@ -12,43 +12,23 @@ import AppKit
 struct PreferencesView: View {
     private let preferences = Preferences()
 
-    @State private var claudePath: String
     @State private var hoverBehavior: HoverBehavior
     @State private var importAlert: ImportAlert?
 
-    let claudeAutoStatus: String
     let onRestyleTerminals: () -> Void
-    let onRelocateClaude: () -> Void
     let onHoverBehaviorChanged: (HoverBehavior) -> Void
 
-    init(claudeAutoStatus: String,
-         onRestyleTerminals: @escaping () -> Void,
-         onRelocateClaude: @escaping () -> Void,
+    init(onRestyleTerminals: @escaping () -> Void,
          onHoverBehaviorChanged: @escaping (HoverBehavior) -> Void) {
         let prefs = Preferences()
-        self._claudePath = State(initialValue: prefs.claudePath ?? "")
         self._hoverBehavior = State(initialValue: prefs.hoverBehavior)
-        self.claudeAutoStatus = claudeAutoStatus
         self.onRestyleTerminals = onRestyleTerminals
-        self.onRelocateClaude = onRelocateClaude
         self.onHoverBehaviorChanged = onHoverBehaviorChanged
     }
 
     var body: some View {
         Form {
             Section("通用") {
-                LabeledContent("claude 路径") {
-                    HStack {
-                        TextField("自动检测", text: $claudePath)
-                            .textFieldStyle(.roundedBorder)
-                        Button("选择…") { pickClaudePath() }
-                    }
-                }
-
-                Text(claudePathStatus)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
                 Picker("悬停行为", selection: $hoverBehavior) {
                     Text("轻微高亮").tag(HoverBehavior.highlight)
                     Text("无反应").tag(HoverBehavior.none)
@@ -65,10 +45,6 @@ struct PreferencesView: View {
         .formStyle(.grouped)
         .frame(width: 420)
         .fixedSize(horizontal: false, vertical: true)
-        .onChange(of: claudePath) { _, new in
-            preferences.claudePath = new.isEmpty ? nil : new
-            onRelocateClaude()
-        }
         .onChange(of: hoverBehavior) { _, new in
             preferences.hoverBehavior = new
             onHoverBehaviorChanged(new)
@@ -84,30 +60,6 @@ struct PreferencesView: View {
                 Text(alert.message)
             }
         }
-    }
-
-    // MARK: - claude 路径
-
-    private var claudePathStatus: String {
-        if !claudePath.isEmpty {
-            return ClaudeLocator.defaultIsExecutable(claudePath)
-                ? "✓ 路径有效"
-                : "⚠ 路径无效或不可执行"
-        }
-        return claudeAutoStatus
-    }
-
-    private func pickClaudePath() {
-        let panel = NSOpenPanel()
-        panel.title = "选择 claude 命令"
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.showsHiddenFiles = true
-
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        claudePath = url.path
     }
 
     // MARK: - 终端主题

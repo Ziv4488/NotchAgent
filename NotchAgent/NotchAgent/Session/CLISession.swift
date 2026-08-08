@@ -57,6 +57,13 @@ final class CLISession: NSObject, AgentSession, LocalProcessTerminalViewDelegate
             return Launch(executable: executable, arguments: arguments,
                           searchPath: searchPath, settingsURL: settingsURL)
         }
+
+        /// 起一个登录 shell。岛不再强绑 `claude`，用户在 shell 里想跑什么就跑什么。
+        static func shell(searchPath: String, settingsURL: URL? = nil) -> Launch {
+            let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+            return Launch(executable: shell, arguments: ["-l"],
+                          searchPath: searchPath, settingsURL: settingsURL)
+        }
     }
 
     init(id: SessionID = UUID(), title: String, workingDirectory: URL?, launch: Launch) {
@@ -170,6 +177,10 @@ final class CLISession: NSObject, AgentSession, LocalProcessTerminalViewDelegate
         variables.append("PATH=\(launch.searchPath)")
         // hook 命令继承这个变量，用它把事件绑回到本 tab（HookBridge 里的第一行协议）。
         variables.append("NOTCH_TAB=\(id.uuidString)")
+        // claude 包装脚本用这个变量给真正的 claude 加 --settings。
+        if let settingsURL = launch.settingsURL {
+            variables.append("NOTCH_SETTINGS=\(settingsURL.path)")
+        }
         // 探针里踩到的坑：从一个 Claude Code 会话里启动的进程会带着这个标记，
         // 子会话的 transcript 不会被保存 —— 而 transcript 是「继续上次会话」的依据。
         // app 正常启动时没有它，这里是防御性地确保不会被传下去。

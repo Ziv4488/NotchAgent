@@ -2,7 +2,7 @@
 //  NewTaskForm.swift
 //  NotchAgent
 //
-//  点 ＋ 之后的新建流程：选目录 → 下指令（spec 3.3）。
+//  点 ＋ 之后的新建流程：选目录 → 输命令（可选）→ 开 shell（spec 3.3）。
 //
 
 import SwiftUI
@@ -181,7 +181,7 @@ struct NewTaskForm: View {
             Image(systemName: "chevron.right")
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(theme.onSurfaceFaint)
-            TextField(selected == nil ? "先选一个目录" : "给 \(selected!.name) 下达指令…",
+            TextField(selected == nil ? "先选一个目录" : "输入命令，或直接回车开 shell…",
                       text: $instruction)
                 .textFieldStyle(.plain)
                 .font(IslandTheme.inputFont)
@@ -200,14 +200,14 @@ struct NewTaskForm: View {
                     }
             }
             .buttonStyle(.plain)
-            .disabled(selected == nil || instruction.isEmpty)
+            .disabled(selected == nil)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
     }
 
     private func submit() {
-        guard let selected, !instruction.isEmpty else { return }
+        guard let selected else { return }
         onSubmit(selected, instruction)
         instruction = ""
     }
