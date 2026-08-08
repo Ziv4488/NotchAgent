@@ -1,7 +1,8 @@
 # NotchAgent
 
 常驻 macOS 刘海区的灵动岛，`LSUIElement`，AppKit + SwiftUI + SwiftTerm。
-在岛里跑 Claude Code 会话（真 PTY）。
+在岛里开真 shell（`$SHELL -l`），可以跑 claude、grok、codex 或任何命令。
+Claude Code 的 hook 集成通过包装脚本透明加 `--settings`。
 
 现在做到哪 → [`docs/status.md`](docs/status.md)。
 做什么 → `docs/superpowers/specs/`。怎么做 → `docs/superpowers/plans/`。验收 → `docs/manual-tests.md`。
@@ -27,7 +28,7 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | `Geometry/` | `ScreenGeometry` 量刘海与菜单栏，`NotchShape` 画那个带内凹拐角的形状 |
 | `Window/` | `NotchWindow`（非激活面板、何时能成为 key）、`NotchHostingView`（命中测试收回岛轮廓、拖拽热区的光标）、`IslandWindowController`、`FocusHandoff` |
 | `Island/` | `IslandState` 四态机、`IslandModel` 视图状态、`IslandMetrics` 尺寸推导、`IslandTheme`；`Views/` 是各块 UI |
-| `Session/` | `CLISession` 起 `claude` 的 PTY、`SessionStore` 持久化 tab、`SessionReaper` 退出时收干净、`TerminalKeystroke` 键位翻译、`Preferences` 偏好存储 |
+| `Session/` | `CLISession` 起 shell 的 PTY、`SessionRuntime` 写 claude 包装脚本到 `bin/`、`SessionStore` 持久化 tab、`SessionReaper` 退出时收干净、`TerminalKeystroke` 键位翻译、`Preferences` 偏好存储 |
 | `Status/` | `HookBridge` 收 Claude Code 的 hook（裸 BSD socket + `nc -U`）、`StatusFeed` 拼状态带文案 |
 
 ## 硬约束

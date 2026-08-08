@@ -777,13 +777,28 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 |---|---|---|
 | 17.1 | 菜单 → 偏好设置… | 弹出标题为「NotchAgent 偏好设置」的窗口，有「通用」和「终端」两个 section |
 | 17.2 | 再点一次「偏好设置…」 | 不弹第二个窗口，把已有的那个提到前面来 |
-| 17.3 | claude 路径留空，看下面那行状态文字 | 显示自动检测到的路径（如 `自动检测到: /opt/homebrew/bin/claude`），或 `⚠ 未找到 claude 命令` |
-| 17.4 | 在 claude 路径框里填一个不存在的路径 | 状态变成 `⚠ 路径无效或不可执行` |
-| 17.5 | 点「选择…」，选到真的 `claude` 可执行文件 | 框里填上路径，状态显示 `✓ 路径有效` |
-| 17.6 | 把路径清空 | 回到自动检测 |
+| ~~17.3~~ | ~~claude 路径留空~~ | 08-08 去掉了 claude 路径设置（shell-first） |
+| ~~17.4~~ | ~~填一个不存在的路径~~ | 同上 |
+| ~~17.5~~ | ~~选择… 按钮~~ | 同上 |
+| ~~17.6~~ | ~~把路径清空~~ | 同上 |
 | 17.7 | 悬停行为 → 无反应，鼠标划过收起态的岛 | 没有白色提亮。换回「轻微高亮」后恢复 |
 | 17.8 | 在面板里改主题 / 字体 / 字号 | 效果和原来在菜单里改一样：正在跑的终端当场变 |
 | 17.9 | 在面板里点「导入配色文件…」 | 弹文件选择框，能导入 iTerm / Ghostty 配色 |
+
+## 18. shell-first 终端（08-08）
+
+新建 tab 不再强绑 `claude`，开的是真 shell。
+
+| # | 操作 | 期望 |
+|---|---|---|
+| 18.1 | 新建 tab，选目录，指令留空，回车 | 在该目录开一个 shell，能看到 shell 提示符 |
+| 18.2 | 新建 tab，输 `claude`，回车 | shell 提示符一闪而过，进入 Claude Code TUI |
+| 18.3 | 新建 tab，输 `ls`，回车 | 列出目录内容，之后停在 shell 提示符 |
+| 18.4 | 在 18.2 的 tab 里跑一轮任务，观察收起态 | hook 事件正常到达（进度文案、绿点），跟以前一样 |
+| 18.5 | 检查 `~/Library/Application Support/NotchAgent/bin/claude` | 文件存在、可执行、内容是包装脚本 |
+| 18.6 | 在岛里的 shell 里 `which claude` | 指向 `~/Library/Application Support/NotchAgent/bin/claude` |
+| 18.7 | 在岛里的 shell 里 `echo $NOTCH_SETTINGS` | 非空，指向 `island-hooks.json` |
+| 18.8 | 已结束的 tab → 继续上次会话 | shell 开出来，自动输入 `claude --resume` 并回车 |
 
 ## ~~16. 把 app 贴进岛里（第 3 阶段）~~
 

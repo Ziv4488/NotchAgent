@@ -7,7 +7,8 @@
 
 ## 一句话
 
-常驻刘海区的 Claude Code 终端。第三方 app 贴附（第 3 阶段）已砍掉，代码在 `stage3-attach` 分支。
+常驻刘海区的通用终端（可跑 claude、grok、codex、gemini 或任何命令）。
+第三方 app 贴附（第 3 阶段）已砍掉，代码在 `stage3-attach` 分支。
 
 ## 阶段
 
@@ -17,7 +18,7 @@
 | 1 · 岛壳（四态、几何、窗口层级、拖拽调尺寸） | 完成 |
 | 2 · Claude Code 会话（PTY、hook 通道、tab、持久化、退出收尾） | 完成 |
 | 3 · 第三方 app 贴附 | **08-08 砍掉**，代码在 `stage3-attach` 分支。镜像方案探针确认输入转发不可行，现有贴附达不到体验标准 |
-| 4 · 打磨 | 7 项里做完 4 项，见下 |
+| 4 · 打磨 | 7 项里做完 5 项，见下 |
 
 ## 跑起来
 
@@ -32,7 +33,8 @@ xcodebuild test -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -des
 ## 下一步（用户排的顺序）
 
 1. ~~**偏好设置面板**~~ —— **08-08 做完**。菜单里的终端主题/字号/字体三项搬进
-   偏好设置窗口，再加上 `claude` 路径和悬停行为。菜单里换成「偏好设置…（⌘,）」
+   偏好设置窗口，加上悬停行为。菜单里换成「偏好设置…（⌘,）」。
+   `claude` 路径已去掉（08-08 shell-first 之后不需要了）
 2. **全屏降级兜底** —— 岛被 `orderOut` 那段时间收到 `Stop`/`Notification` 时发系统通知
 3. **终端左右二分** —— 用户说「现在拖大其实整体还是挺足够的」，排最后
 
@@ -41,8 +43,21 @@ xcodebuild test -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -des
 （岛没有主菜单，和 ⌘C/⌘V/⌘A 当初一样）。开工前要定两件事：用它自带那条毛玻璃
 查找条还是自己画、⌘F 归不归终端。细节见 plan 的「4.7 的范围」
 
-打磨里已做完的四项：错误态 UI（08-02）、tab 条横向滚动（08-02）、
-**终端配色与字体（08-05 做，08-06 收）**、**偏好设置面板（08-08）**。
+打磨里已做完的五项：错误态 UI（08-02）、tab 条横向滚动（08-02）、
+**终端配色与字体（08-05 做，08-06 收）**、**偏好设置面板（08-08）**、
+**shell-first 终端（08-08）**。
+
+### shell-first 终端（08-08）
+
+新建 tab 起 `$SHELL -l` 而不是 `claude`。指令框里输什么就当第一条命令打进 PTY：
+输 `claude 帮我重构` 就跑 claude，输 `grok` 就跑 grok，留空就是空 shell。
+
+hook 集成不丢：`Application Support/NotchAgent/bin/claude` 是一个包装脚本，
+自动给真正的 `claude` 加 `--settings`。bin/ 排在 PTY 的 PATH 最前面，
+包装脚本自己把自己从 PATH 里摘掉再 exec 真正的 claude，不递归。
+PTY 环境里设了 `NOTCH_SETTINGS` 和 `NOTCH_TAB`。
+
+偏好设置面板去掉了 `claude` 路径（shell 启动不再需要找 claude）。
 
 ### 偏好设置面板（08-08）
 
@@ -51,7 +66,7 @@ xcodebuild test -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -des
 
 | section | 项目 |
 |---|---|
-| 通用 | `claude` 路径（文本框 + 选择… 按钮，空着走自动检测）、悬停行为（轻微高亮 / 无反应） |
+| 通用 | 悬停行为（轻微高亮 / 无反应） |
 | 终端 | 主题（默认 / Dracula / One Light）、字体、字号（10–18）、导入配色文件… |
 
 原来菜单里的三个子菜单（终端主题 ▸ / 终端字号 ▸ / 终端字体 ▸）已删，
