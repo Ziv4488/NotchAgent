@@ -218,7 +218,8 @@ struct TabStrip: View {
     /// 岛体是纯黑，但收起态悬停时整块岛叠着一层白 5%（`hoverTint`），
     /// 叠出来是 `white: 0.05`。展开态没有那层提亮。
     private var chipBacking: Color {
-        Color(white: model.isHovering && model.state != .expanded ? 0.05 : 0)
+        Color(white: model.isHovering && model.state != .expanded
+                  && model.hoverBehavior == .highlight ? 0.05 : 0)
     }
 }
 

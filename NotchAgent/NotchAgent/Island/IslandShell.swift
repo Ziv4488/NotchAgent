@@ -124,9 +124,8 @@ struct IslandShell: View {
         return body
             .fill(.black, style: FillStyle(eoFill: true))
             .overlay {
-                // 悬停只做轻微提亮，不展开、不预览（spec 3.1）。
-                // 同样按 even-odd 填 —— 不然提亮那一层会把洞重新糊上。
                 body.fill(model.isHovering && model.state != .expanded
+                              && model.hoverBehavior == .highlight
                           ? IslandTheme.hoverTint : Color.clear,
                           style: FillStyle(eoFill: true))
             }

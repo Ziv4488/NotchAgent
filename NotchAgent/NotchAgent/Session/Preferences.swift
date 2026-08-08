@@ -7,6 +7,11 @@
 
 import Foundation
 
+enum HoverBehavior: String, CaseIterable {
+    case highlight
+    case none
+}
+
 /// 零散偏好。展开尺寸放这里而不是 tab 文件里 —— 它是「岛」的属性，不是某个会话的。
 struct Preferences {
     private let defaults: UserDefaults
@@ -24,6 +29,7 @@ struct Preferences {
         static let terminalThemeCustom = "terminalThemeCustom"
         static let terminalFontFamily = "terminalFontFamily"
         static let terminalFontSize = "terminalFontSize"
+        static let hoverBehavior = "hoverBehavior"
     }
 
     /// 用量条拆掉后留在 chrome 里的那 22pt，2026-08-02 挪回了内容区
@@ -116,6 +122,15 @@ struct Preferences {
             return size > 0 ? CGFloat(size) : nil
         }
         nonmutating set { defaults.set(newValue.map(Double.init) ?? 0, forKey: Key.terminalFontSize) }
+    }
+
+    var hoverBehavior: HoverBehavior {
+        get {
+            guard let raw = defaults.string(forKey: Key.hoverBehavior),
+                  let value = HoverBehavior(rawValue: raw) else { return .highlight }
+            return value
+        }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.hoverBehavior) }
     }
 }
 

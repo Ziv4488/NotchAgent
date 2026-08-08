@@ -27,7 +27,7 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | `Geometry/` | `ScreenGeometry` 量刘海与菜单栏，`NotchShape` 画那个带内凹拐角的形状 |
 | `Window/` | `NotchWindow`（非激活面板、何时能成为 key）、`NotchHostingView`（命中测试收回岛轮廓、拖拽热区的光标）、`IslandWindowController`、`FocusHandoff` |
 | `Island/` | `IslandState` 四态机、`IslandModel` 视图状态、`IslandMetrics` 尺寸推导、`IslandTheme`；`Views/` 是各块 UI |
-| `Session/` | `CLISession` 起 `claude` 的 PTY、`SessionStore` 持久化 tab、`SessionReaper` 退出时收干净、`TerminalKeystroke` 键位翻译 |
+| `Session/` | `CLISession` 起 `claude` 的 PTY、`SessionStore` 持久化 tab、`SessionReaper` 退出时收干净、`TerminalKeystroke` 键位翻译、`Preferences` 偏好存储 |
 | `Status/` | `HookBridge` 收 Claude Code 的 hook（裸 BSD socket + `nc -U`）、`StatusFeed` 拼状态带文案 |
 
 ## 硬约束
@@ -45,6 +45,7 @@ macOS 26 上会让 WindowServer 合成 left-mouse-down，不能用。
 
 ## 干活的规矩
 
+- **subagent 不要用 Opus 5 模型。** 起 subagent 时不传 `model: "opus"` —— 用默认的或者别的都行
 - **动手前先搜。** 用 grep/find 扫一遍有没有现成实现，报路径和现有逻辑，让用户决定
   是复用还是新写。别跳过这步直接开写
 - **每条回归测试都要证明它真的会红。** 把修复回滚，跑，看它红，再改回来。

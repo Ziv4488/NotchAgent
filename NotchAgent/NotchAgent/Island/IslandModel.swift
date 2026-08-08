@@ -102,6 +102,7 @@ final class IslandModel {
     var selectedTabID: UUID?
     /// 鼠标是否悬停。只做轻微高亮，不展开、不预览（spec 3.1）。
     var isHovering = false
+    var hoverBehavior: HoverBehavior = Preferences().hoverBehavior
     /// 正在走新建流程（点了 ＋，或者一个 tab 都没有）。
     var isComposingNewTask = false
     /// 新建流程的项目列表，进入时才扫盘。

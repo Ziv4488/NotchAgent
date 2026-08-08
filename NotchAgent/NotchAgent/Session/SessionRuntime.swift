@@ -86,6 +86,10 @@ final class SessionRuntime {
         bridge.stop()
     }
 
+    func relocate() {
+        location = ClaudeLocator(override: preferences.claudePath).locate()
+    }
+
     /// 岛起的 claude 在命令行里长什么样。抽出来是为了能单测。
     nonisolated static func launchSignature(settingsURL: URL) -> String {
         "--settings \(settingsURL.path)"
