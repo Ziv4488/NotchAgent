@@ -2,6 +2,8 @@
 
 macOS 刘海区的灵动岛终端。常驻屏幕顶部，在 Notch 里开真正的 shell，可以跑 Claude Code、Grok、Codex、Gemini CLI 或任何命令行工具。
 
+<img width="800" alt="展开态：岛从刘海里长出来，里面跑着 Claude Code" src="docs/screenshot.png">
+
 ## 特性
 
 - **真终端** — `$SHELL -l` 起登录 shell，PTY 交互与 Terminal.app 一致
