@@ -429,9 +429,13 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 > | `⌘C` 且没有选区 | 什么都不做 | 什么都不做 | **这条是为了对齐才写的代码**：SwiftTerm 自带的 `copy(_:)` 会清空剪贴板、或者把上一次的旧选区交出去（§10.11f/g） |
 > | 右边的滚动条 | 藏掉了 | 有 | 见 §10.8，那 15pt 白占一列 |
 > | 收起态浮层里的输入框 | 字先攒在岛上，回车才整段进 PTY | 逐字进 | 中文输入法组字期间每一下都会被当成正文送出去（§14.14c） |
+> | `$ZDOTDIR` | 指向 `Application Support/NotchAgent/zdotdir` | 空（或用户自己设的） | 岛的 rc 得跑在用户的 rc **之后**才压得住 PATH，否则 `claude` 解析到用户自己那个、hook 一条都不发（08-11）。用户原来那个存在 `$NOTCH_USER_ZDOTDIR` 里，四个 rc 各自原样跑一遍。**不还原**：还原了岛里再开一层 zsh 就绕过了 shim |
+> | `$PATH` 第一项 | `Application Support/NotchAgent/bin` | 用户 rc 说了算 | 同上。除了 `claude` 这一个名字，那个目录里什么都没有 |
+> | `claude` | 一个包装脚本，透明补 `--settings` | 用户装的那个 | hook 通道的入口。包装脚本把自己的目录从 PATH 摘掉再 exec 真身，不递归 |
 >
 > 其余一律原样：`Esc`、`⇧Tab`、`Ctrl-*`、`⌥←/⌥→`、方向键、回车、中文输入法，
-> 全部直通 PTY，岛不插手。
+> 全部直通 PTY，岛不插手。用户 rc 里定义的别名、函数、其他 PATH 前置
+> （`grok`、`node`、conda、nvm）全部照常生效 —— `ShellShimTests` 钉着这一条。
 
 > **10.10e：展开态底下那条输入框拆了（2026-08-04）。**
 >
@@ -798,9 +802,29 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | 18.9 | 新建 tab 输命令后立刻收起岛 | 岛回到 idle 态（无边框、无计时），直到 hook 事件到达才转 running |
 | 18.10 | claude 任务完成后（收起态） | 岛转到 notice 态（tab 条弹出，绿点） |
 | 18.5 | 检查 `~/Library/Application Support/NotchAgent/bin/claude` | 文件存在、可执行、内容是包装脚本 |
-| 18.6 | 在岛里的 shell 里 `which claude` | 指向 `~/Library/Application Support/NotchAgent/bin/claude` |
+| ~~18.6~~ | ~~在岛里的 shell 里 `which claude`~~ | **08-11 换成自动化测试**（`ShellShimTests`）。这行手测从来没真跑过，代价是 hook 通道静默断了三天 —— 见下面那段 |
 | 18.7 | 在岛里的 shell 里 `echo $NOTCH_SETTINGS` | 非空，指向 `island-hooks.json` |
 | 18.8 | 已结束的 tab → 继续上次会话 | shell 开出来，自动输入 `claude --resume` 并回车 |
+| 18.11 | 在岛里的 shell 里 `alias`、`echo $PATH`、跑一个只有你的 rc 才装得上的命令（`grok`、conda、nvm 装的 node） | 跟你平时开终端一模一样。间接层的代价必须为零 |
+
+> **18.6 为什么被淘汰（2026-08-11）。**
+>
+> 08-08 shell-first 之后 hook 通道**静默断了**：包装脚本写对了、`searchPath`
+> 也确实把它排在最前，可岛起的是 `$SHELL -l`，登录 shell 会先跑
+> `/etc/zprofile` 里的 `path_helper`（按 `/etc/paths` **重建** PATH，把我们的
+> 推到末尾），再跑用户的 `~/.zshrc`（里面通常还有一句
+> `export PATH="$HOME/.local/bin:$PATH"`）。结果岛里 `command -v claude`
+> 指的是真身，`--settings` 加不上，六个 hook 一条都不发。
+>
+> 表现是**岛不显示执行状态、任务完成也不通知**。在 08-11 之前看不出来，
+> 因为那时新建 tab 会立刻假装 `.running`，假的边框和计时把这件事挡住了。
+>
+> 修法是 `ShellShim`：把 zsh 的 `ZDOTDIR` 指到岛自己的目录，四个 rc 各自先
+> 原样跑一遍用户那一份，再前置 PATH —— **跑在用户的 rc 之后**才压得住。
+>
+> 这行手测本来就该是自动化的：起一个真的 `zsh -l -i`，造一个 `.zshrc` 前置
+> 自己的 `claude`，看谁赢。现在是 `ShellShimTests`，九条，其中一条是对照组
+> （摘掉 ZDOTDIR 就该输给用户那个）—— 这条替代了「回滚一遍看它红」那个动作。
 
 ## ~~16. 把 app 贴进岛里（第 3 阶段）~~
 

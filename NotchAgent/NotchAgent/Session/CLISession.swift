@@ -47,6 +47,11 @@ final class CLISession: NSObject, AgentSession, LocalProcessTerminalViewDelegate
         /// 登录 shell 的 PATH。不传的话 `claude` 起来了也找不到 `git` / `npm` / `rg`。
         var searchPath: String
         var settingsURL: URL?
+        /// zsh 的 `ZDOTDIR` 指到哪。只有 zsh 有这个东西，别的 shell 是 nil。
+        ///
+        /// **光靠 `searchPath` 是压不住用户的 rc 的** —— `path_helper` 和
+        /// `~/.zshrc` 都在我们之后动 PATH，包装脚本会被挤到最后一位。见 `ShellShim`。
+        var zdotDir: URL?
 
         static func claude(executable: String, searchPath: String, settingsURL: URL,
                            instruction: String?, resume: Bool) -> Launch {
@@ -59,10 +64,12 @@ final class CLISession: NSObject, AgentSession, LocalProcessTerminalViewDelegate
         }
 
         /// 起一个登录 shell。岛不再强绑 `claude`，用户在 shell 里想跑什么就跑什么。
-        static func shell(searchPath: String, settingsURL: URL? = nil) -> Launch {
+        static func shell(searchPath: String, settingsURL: URL? = nil,
+                          zdotDir: URL? = nil) -> Launch {
             let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
             return Launch(executable: shell, arguments: ["-l"],
-                          searchPath: searchPath, settingsURL: settingsURL)
+                          searchPath: searchPath, settingsURL: settingsURL,
+                          zdotDir: ShellShim.usesZDotDir(shell: shell) ? zdotDir : nil)
         }
     }
 
@@ -180,6 +187,17 @@ final class CLISession: NSObject, AgentSession, LocalProcessTerminalViewDelegate
         // claude 包装脚本用这个变量给真正的 claude 加 --settings。
         if let settingsURL = launch.settingsURL {
             variables.append("NOTCH_SETTINGS=\(settingsURL.path)")
+        }
+        // zsh：把 ZDOTDIR 换成岛自己的，并把用户原来的那个交给 NOTCH_USER_ZDOTDIR ——
+        // 岛的 rc 靠它把用户那一份原样跑一遍（见 `ShellShim`）。
+        // **不还原 ZDOTDIR**：还原了的话岛里再开一个 zsh 就绕过了 shim，
+        // 那个子 shell 里的 claude 又不带 hook 了。代价是岛里 `echo $ZDOTDIR`
+        // 不是 $HOME —— 记在 manual-tests §10 那张「故意不一样的地方」表里。
+        if let zdotDir = launch.zdotDir {
+            let userZDotDir = ProcessInfo.processInfo.environment["ZDOTDIR"] ?? NSHomeDirectory()
+            variables.removeAll { $0.hasPrefix("ZDOTDIR=") || $0.hasPrefix("NOTCH_USER_ZDOTDIR=") }
+            variables.append("NOTCH_USER_ZDOTDIR=\(userZDotDir)")
+            variables.append("ZDOTDIR=\(zdotDir.path)")
         }
         // 探针里踩到的坑：从一个 Claude Code 会话里启动的进程会带着这个标记，
         // 子会话的 transcript 不会被保存 —— 而 transcript 是「继续上次会话」的依据。

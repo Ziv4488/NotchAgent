@@ -57,7 +57,7 @@ final class SessionRuntime {
             log.info("PATH 里没找到 claude（用户可以在 shell 里自己装）：\(searchPath, privacy: .public)")
         }
 
-        writeClaudeWrapper()
+        installShellShim()
 
         bridge.onEvent = { [weak self] event, declaredTab in
             self?.handle(event, declaredTab: declaredTab)
@@ -91,7 +91,7 @@ final class SessionRuntime {
 
     func relocate() {
         location = ClaudeLocator(override: preferences.claudePath).locate()
-        writeClaudeWrapper()
+        installShellShim()
     }
 
     /// 岛起的 claude 在命令行里长什么样。抽出来是为了能单测。
@@ -102,39 +102,24 @@ final class SessionRuntime {
     /// 收尾用。单测替换成假的，免得真去 pgrep。
     var reaper = SessionReaper()
 
-    // MARK: - claude 包装脚本
+    // MARK: - shell shim
 
     static var wrapperBinDir: URL {
         HookBridge.supportDirectory.appending(path: "bin")
     }
 
-    /// 在 `Application Support/NotchAgent/bin/` 下放一个 `claude` 脚本，
-    /// 把 `--settings` 透明地带上。shell 的 PATH 里这个目录排在最前面，
-    /// 用户在岛里敲 `claude` 就会走这个包装；包装自己把自己从 PATH 里摘掉
-    /// 再 exec 真正的 claude，不会递归。
-    private func writeClaudeWrapper() {
-        let binDir = Self.wrapperBinDir
-        let wrapperURL = binDir.appending(path: "claude")
-        let script = """
-        #!/bin/sh
-        # NotchAgent: transparently forward Claude Code hooks to the island.
-        _d="$(cd "$(dirname "$0")" && pwd)"
-        _p=""; _s="$IFS"; IFS=:
-        for _x in $PATH; do [ "$_x" != "$_d" ] && _p="${_p:+$_p:}$_x"; done
-        IFS="$_s"
-        if [ -n "$NOTCH_SETTINGS" ]; then
-          exec env PATH="$_p" claude --settings "$NOTCH_SETTINGS" "$@"
-        else
-          exec env PATH="$_p" claude "$@"
-        fi
-        """
+    /// zsh 的 `ZDOTDIR` 指到这里。见 `ShellShim`。
+    static var zdotDir: URL {
+        HookBridge.supportDirectory.appending(path: "zdotdir")
+    }
+
+    /// 装 `claude` 包装脚本和 ZDOTDIR 那一套。**两样缺一不可**：
+    /// 包装脚本负责补 `--settings`，ZDOTDIR 负责让它真的被找到（见 `ShellShim`）。
+    private func installShellShim() {
         do {
-            try FileManager.default.createDirectory(at: binDir, withIntermediateDirectories: true)
-            try script.write(to: wrapperURL, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o755], ofItemAtPath: wrapperURL.path)
+            try ShellShim.install(binDir: Self.wrapperBinDir, zdotDir: Self.zdotDir)
         } catch {
-            log.error("写 claude 包装脚本失败：\(error.localizedDescription, privacy: .public)")
+            log.error("装 shell shim 失败，hook 通道会静默失效：\(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -157,7 +142,8 @@ final class SessionRuntime {
             id: id,
             title: title,
             workingDirectory: directory,
-            launch: .shell(searchPath: shellPath, settingsURL: bridge.settingsURL))
+            launch: .shell(searchPath: shellPath, settingsURL: bridge.settingsURL,
+                           zdotDir: Self.zdotDir))
         session.callbacks.onStatusChanged = { [weak self] id, status in
             self?.onStatusChanged?(id, status)
         }

@@ -28,7 +28,7 @@ xcodebuild test -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -des
 ./scripts/smoke.sh          # 起真 claude，端到端验 hook 事件
 ```
 
-08-08 砍掉第 3 阶段后全绿：**378 个测试 / 38 个套件**。
+08-11 全绿：**387 个测试 / 39 个套件**。
 
 ## 下一步（用户排的顺序）
 
@@ -53,15 +53,25 @@ xcodebuild test -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -des
 输 `claude 帮我重构` 就跑 claude，输 `grok` 就跑 grok，留空就是空 shell。
 
 hook 集成不丢：`Application Support/NotchAgent/bin/claude` 是一个包装脚本，
-自动给真正的 `claude` 加 `--settings`。bin/ 排在 PTY 的 PATH 最前面，
-包装脚本自己把自己从 PATH 里摘掉再 exec 真正的 claude，不递归。
-PTY 环境里设了 `NOTCH_SETTINGS` 和 `NOTCH_TAB`。
+自动给真正的 `claude` 加 `--settings`。包装脚本自己把自己从 PATH 里摘掉
+再 exec 真正的 claude，不递归。PTY 环境里设了 `NOTCH_SETTINGS` 和 `NOTCH_TAB`。
+
+**08-11 修：hook 通道其实一直是断的。** 光把 bin/ 排在 PTY 的 PATH 最前面压不住
+登录 shell —— `path_helper` 会重建 PATH 把它推到末尾，用户的 `~/.zshrc` 再补一句
+`export PATH="$HOME/.local/bin:$PATH"`。岛里 `claude` 解析到用户自己那个，
+`--settings` 加不上，六个 hook 一条都不发。修法是 `Session/ShellShim.swift`：
+zsh 的 `ZDOTDIR` 指到 `Application Support/NotchAgent/zdotdir`，四个 rc 各自先
+原样跑一遍用户那一份，**再**前置 PATH。非 zsh 的 shell 没有对等切入点，维持老办法。
+`ShellShimTests` 九条真起 zsh 钉着，`docs/manual-tests.md` §18.6 那行手测作废。
 
 偏好设置面板去掉了 `claude` 路径（shell 启动不再需要找 claude）。
 
 **08-11 修**：新建 tab 不再立刻标 `.running`（原来带命令就标，导致计时和边框在 hook
 事件到达前就出现）。tab 从 `.done` 起步，由 hook 的 `userPromptSubmit` 驱动进入
 `.running`，`Stop` 驱动回到 `.done` + notice 态。调试菜单去掉了四个第一阶段的假会话项。
+
+**这一改把上面那个 shim 的病灶露了出来**：假的 `.running` 一撤，「岛不显示执行状态、
+完成也不通知」当场可见 —— 那不是这次改动引入的，是 08-08 起 hook 就没到过岛上。
 
 ### 偏好设置面板（08-08）
 
