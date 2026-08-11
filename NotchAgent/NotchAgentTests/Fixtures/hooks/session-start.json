@@ -1,7 +1,7 @@
 {
   "session_id": "c8c771f8-7b01-4a90-a21a-d518267d5e94",
-  "transcript_path": "/Users/ziv/.claude/projects/-Users-ziv-Desktop-Vibe-Agent---/c8c771f8-7b01-4a90-a21a-d518267d5e94.jsonl",
-  "cwd": "/Users/ziv/Desktop/Vibe/Agent灵动岛",
+  "transcript_path": "/Users/you/.claude/projects/-Users-you-Desktop-Vibe-Agent---/c8c771f8-7b01-4a90-a21a-d518267d5e94.jsonl",
+  "cwd": "/Users/you/Desktop/Vibe/Agent灵动岛",
   "hook_event_name": "SessionStart",
   "source": "startup"
 }

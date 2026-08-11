@@ -83,7 +83,7 @@ enum ProjectDirectoryStore {
         return nil
     }
 
-    /// 兜底猜测：`-Users-ziv-Desktop-Foo` → `/Users/ziv/Desktop/Foo`。
+    /// 兜底猜测：`-Users-you-Desktop-Foo` → `/Users/you/Desktop/Foo`。
     /// 名字里本来就有 `-` 的会猜错，所以逐段验证存在性，走不通就整段还原成一个带 `-` 的名字。
     static func decodeDirectoryName(_ name: String) -> String? {
         let segments = name.split(separator: "-", omittingEmptySubsequences: true).map(String.init)

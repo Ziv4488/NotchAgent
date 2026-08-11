@@ -1,7 +1,7 @@
 {
   "session_id": "47d83413-55d4-4043-b0c1-d4d79dae4b0f",
-  "transcript_path": "/Users/ziv/.claude/projects/-Users-ziv-Desktop-Vibe-Agent---/47d83413-55d4-4043-b0c1-d4d79dae4b0f.jsonl",
-  "cwd": "/Users/ziv/Desktop/Vibe/Agent灵动岛",
+  "transcript_path": "/Users/you/.claude/projects/-Users-you-Desktop-Vibe-Agent---/47d83413-55d4-4043-b0c1-d4d79dae4b0f.jsonl",
+  "cwd": "/Users/you/Desktop/Vibe/Agent灵动岛",
   "prompt_id": "1c08eb0e-d32f-4e5d-abe3-8580017556c7",
   "permission_mode": "default",
   "hook_event_name": "UserPromptSubmit",

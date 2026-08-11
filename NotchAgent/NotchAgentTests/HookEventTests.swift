@@ -24,7 +24,7 @@ struct HookEventTests {
     func sessionStart() throws {
         let event = try #require(HookEvent.decode(try HookFixtures.data("session-start")))
         #expect(event.kind == .sessionStart)
-        #expect(event.cwd == "/Users/ziv/Desktop/Vibe/Agent灵动岛")
+        #expect(event.cwd == "/Users/you/Desktop/Vibe/Agent灵动岛")
         #expect(event.toolName == nil)
     }
 

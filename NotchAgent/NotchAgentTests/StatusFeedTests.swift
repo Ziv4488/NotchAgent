@@ -98,10 +98,10 @@ struct StatusFeedTests {
 
     /// 状态带左侧只有约 60pt ≈ 10 个英文字符（见 IslandConstants.idleSideBleed）。
     /// 长路径和长命令必须在这里就砍短，不能指望 SwiftUI 的截断 ——
-    /// 那样截出来的是「/Users/ziv/Desk…」，一个字的信息都没有。
+    /// 那样截出来的是「/Users/you/Desk…」，一个字的信息都没有。
     @Test("长目标砍短：路径只留文件名，命令只留前两个词")
     func shortening() {
-        #expect(StatusFeed.shorten("/Users/ziv/Desktop/Vibe/session.ts") == "session.ts")
+        #expect(StatusFeed.shorten("/Users/you/Desktop/Vibe/session.ts") == "session.ts")
         #expect(StatusFeed.shorten("npm test -- --watch --coverage") == "npm test")
         #expect(StatusFeed.shorten("aVeryLongFileNameIndeed.swift").count <= 10)
         #expect(StatusFeed.shorten("aVeryLongFileNameIndeed.swift").hasSuffix("…"))
@@ -111,7 +111,7 @@ struct StatusFeedTests {
     /// 这种四个点的怪东西 —— 实机截图里就是这么发现的。所以这里按真实字体量一遍：
     /// 只要我们截完还是放不下，就说明上限定错了。
     @Test("最长的文案也放得进状态带左半边，不会被二次截断", arguments: [
-        "docs/manual-tests.md", "/Users/ziv/a/b/VeryLongComponentName.swift",
+        "docs/manual-tests.md", "/Users/you/a/b/VeryLongComponentName.swift",
         "npm run test:watch -- --coverage", "src/components/Button/index.tsx",
     ])
     func fitsInTheBand(target: String) {
