@@ -63,4 +63,44 @@ echo "$EVENTS" | grep -q "hook SessionStart" || fail "没收到 SessionStart"
 echo "$EVENTS" | grep -q "hook Stop"         || fail "没收到 Stop"
 echo "$EVENTS" | grep -q "tab=$TAB"          || fail "事件没带上 NOTCH_TAB（tab 绑定会失效）"
 
-echo "✅ 冒烟通过：SessionStart 与 Stop 都到了，且带着正确的 tab id"
+# ---------------------------------------------------------------------------
+# 上面那一段**绕开了 shell**：它自己把 --settings 拼在命令行上。
+# 岛里不是这么跑的 —— 岛开一个登录 shell，用户敲 `claude`，靠 PATH 找到包装脚本。
+# 08-08 到 08-11 之间 hook 通道整条断了三天而这个脚本一直是绿的，就是因为
+# 少了下面这一段：真身和包装脚本谁被找到，只有走一遍 shell 才知道。
+# ---------------------------------------------------------------------------
+
+echo "==> 走一遍 shell（岛里真正的路径）"
+ZDOTDIR_ISLAND="$SUPPORT/zdotdir"
+BIN_ISLAND="$SUPPORT/bin"
+[ -x "$BIN_ISLAND/claude" ] || fail "包装脚本没生成：$BIN_ISLAND/claude"
+[ -f "$ZDOTDIR_ISLAND/.zshrc" ] || fail "ZDOTDIR 那一套没生成：$ZDOTDIR_ISLAND"
+
+# 和 CLISession.environment() 注入的一模一样：PATH 前置 + ZDOTDIR 改指 + 用户原来那个。
+SHELL_ENV=(
+  "PATH=$BIN_ISLAND:$PATH"
+  "ZDOTDIR=$ZDOTDIR_ISLAND"
+  "NOTCH_USER_ZDOTDIR=${ZDOTDIR:-$HOME}"
+  "NOTCH_SETTINGS=$SETTINGS"
+  "NOTCH_TAB=$TAB"
+)
+
+RESOLVED=$(env "${SHELL_ENV[@]}" /bin/zsh -l -i -c 'command -v claude' 2>/dev/null | tail -1)
+[ "$RESOLVED" = "$BIN_ISLAND/claude" ] || \
+  fail "岛里的 claude 不是包装脚本，是 $RESOLVED —— hook 一条都不会发（见 ShellShim）"
+echo "    command -v claude → 包装脚本 ✓"
+
+SINCE_SHELL=$(date +"%Y-%m-%d %H:%M:%S")
+env -u CLAUDE_CODE_CHILD_SESSION "${SHELL_ENV[@]}" \
+  /bin/zsh -l -i -c 'claude -p "只回答两个字：收到" --output-format text' \
+  >/dev/null 2>&1 || fail "经由 shell 的 claude 跑失败"
+
+sleep 2
+SHELL_EVENTS=$(/usr/bin/log show --start "$SINCE_SHELL" --info \
+  --predicate 'subsystem == "com.notchagent"' --style compact 2>/dev/null \
+  | grep -o "hook [A-Za-z]* tab=[0-9a-fA-F-]*")
+echo "$SHELL_EVENTS" | sed 's/^/    /'
+echo "$SHELL_EVENTS" | grep -q "hook Stop" || \
+  fail "经由 shell 跑的 claude 没发出 hook —— 包装脚本被绕过了"
+
+echo "✅ 冒烟通过：直连和经由 shell 两条路上，hook 都带着正确的 tab id 抵达"
