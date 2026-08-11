@@ -1,6 +1,6 @@
 # 现在做到哪了
 
-更新于 2026-08-08（砍掉第 3 阶段之后）。**这页只写"当前状态"，细节不搬**——
+更新于 2026-08-11。**这页只写"当前状态"，细节不搬**——
 做什么去 [spec](superpowers/specs/2026-07-30-agent-dynamic-island-design.md)，
 怎么做去 [plan](superpowers/plans/2026-07-30-agent-dynamic-island-plan.md)，
 验收去 [manual-tests](manual-tests.md)。
@@ -58,6 +58,10 @@ hook 集成不丢：`Application Support/NotchAgent/bin/claude` 是一个包装�
 PTY 环境里设了 `NOTCH_SETTINGS` 和 `NOTCH_TAB`。
 
 偏好设置面板去掉了 `claude` 路径（shell 启动不再需要找 claude）。
+
+**08-11 修**：新建 tab 不再立刻标 `.running`（原来带命令就标，导致计时和边框在 hook
+事件到达前就出现）。tab 从 `.done` 起步，由 hook 的 `userPromptSubmit` 驱动进入
+`.running`，`Stop` 驱动回到 `.done` + notice 态。调试菜单去掉了四个第一阶段的假会话项。
 
 ### 偏好设置面板（08-08）
 

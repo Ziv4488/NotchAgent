@@ -362,14 +362,14 @@ final class IslandModel {
 
         isComposingNewTask = false
         launchError = nil
-        // 带指令起的会话马上就要干活，不带的（比如 --resume）只是停在提示符前。
-        // 后者标成「在跑」就会琥珀色慢呼吸加计时，而它其实什么都没做。
-        let willWork = !instruction.isEmpty
+        // shell-first：tab 一律从 .done 起步，不带计时、不带边框。
+        // 真正开始干活由 hook 事件（userPromptSubmit）驱动 → .running。
+        // 早先这里直接标 .running + "启动中"，结果还没收到 hook 就已经
+        // 计时 + 显边框了；hook 断了更糟，永远停在 "启动中 3:22"。
         let tab = IslandTab(id: id, title: project.name, kind: .cli,
-                            status: willWork ? .running : .done,
+                            status: .done,
                             accent: Self.accent(for: project.path),
-                            directory: project.path,
-                            activity: willWork ? "启动中" : nil)
+                            directory: project.path)
         tabs.insert(tab, at: min(insertion ?? tabs.count, tabs.count))
         selectedTabID = id
         send(.sessionStarted)

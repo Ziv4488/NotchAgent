@@ -795,6 +795,8 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 | 18.2 | 新建 tab，输 `claude`，回车 | shell 提示符一闪而过，进入 Claude Code TUI |
 | 18.3 | 新建 tab，输 `ls`，回车 | 列出目录内容，之后停在 shell 提示符 |
 | 18.4 | 在 18.2 的 tab 里跑一轮任务，观察收起态 | hook 事件正常到达（进度文案、绿点），跟以前一样 |
+| 18.9 | 新建 tab 输命令后立刻收起岛 | 岛回到 idle 态（无边框、无计时），直到 hook 事件到达才转 running |
+| 18.10 | claude 任务完成后（收起态） | 岛转到 notice 态（tab 条弹出，绿点） |
 | 18.5 | 检查 `~/Library/Application Support/NotchAgent/bin/claude` | 文件存在、可执行、内容是包装脚本 |
 | 18.6 | 在岛里的 shell 里 `which claude` | 指向 `~/Library/Application Support/NotchAgent/bin/claude` |
 | 18.7 | 在岛里的 shell 里 `echo $NOTCH_SETTINGS` | 非空，指向 `island-hooks.json` |
