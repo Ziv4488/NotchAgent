@@ -6,3 +6,4 @@ DerivedData/
 xcuserdata/
 *.xcscmblueprint
 *.xccheckout
+.claude/settings.local.json
