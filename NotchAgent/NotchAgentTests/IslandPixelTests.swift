@@ -309,9 +309,9 @@ struct IslandPixelTests {
     /// 不是底色的像素」当作岛的下沿 —— 挂上投影之后那个位置跟着投影一起下移，
     /// 检查的带子也跟着走，于是测试照样绿。要查的东西自己会移动检查的地方，
     /// 这种度量一律不能用。岛的尺寸是已知的，直接拿。
-    /// **不含 idle。** 那一态整套外沿都不上（见 `idleWearsNoEdges`）。
+    /// **只有展开态。** 另外三态整套外沿都不上（见 `onlyExpandedWearsEdges`）。
     @Test("岛的外沿是三层：内亮线、外黑线、再往外阴影化得开",
-          arguments: [IslandState.running, .notice, .expanded])
+          arguments: [IslandState.expanded])
     func islandHasThreeEdgeLayers(state: IslandState) throws {
         let model = IslandModel.previewModel(state: state)
         let size = canvas(around: model)
@@ -405,7 +405,7 @@ struct IslandPixelTests {
     ///
     /// 取样点选**刘海正中那一列**：那儿状态带一个字都没有
     ///（`statusBandTextStaysOutOfTheNotch` 钉着这件事），亮起来只可能是描边。
-    @Test("岛的顶边不描线", arguments: [IslandState.running, .expanded])
+    @Test("岛的顶边不描线", arguments: [IslandState.expanded])
     func topEdgeIsNotStroked(state: IslandState) throws {
         let model = IslandModel.previewModel(state: state)
         let size = canvas(around: model)
@@ -425,14 +425,23 @@ struct IslandPixelTests {
         #expect(abs(side - 0.2) < 0.04, "侧边根本没有亮线（\(side)），这条测试等于没测")
     }
 
-    /// **idle 态整套外沿都不上。**
+    /// **除了展开态，整套外沿都不上。**
     ///
-    /// 那时候岛就是刘海本身（高正好一条菜单栏），沿着它描一圈亮线再挂一层阴影，
-    /// 读起来是「屏幕顶上浮着一根黑条」而不是刘海。用户 2026-08-04 的原话是
+    /// idle 那时候岛就是刘海本身（高正好一条菜单栏），沿着它描一圈亮线再挂一层
+    /// 阴影，读起来是「屏幕顶上浮着一根黑条」而不是刘海。用户 2026-08-04 的原话是
     /// 「ideal 态的时候按照之前的边缘方案」—— 回到 08-02 那版，纯黑一块。
-    @Test("idle 态不描边、不投影")
-    func idleWearsNoEdges() throws {
-        let model = IslandModel.previewModel(state: .idle)
+    ///
+    /// **running 和 notice 是 08-12 按实机加进来的**：这两态都是没人在看的时候
+    /// 岛自己冒出来的，一描边就成了浮在壁纸上的控件。用户原话「工作时和通知态的
+    /// 边框有问题，这些应该都保持 idle 态常驻无边框的状态」。
+    ///
+    /// 三态一起遍历而不是各写一条：判据完全相同，分开写只会让下次改规矩时
+    /// 漏掉其中一条。展开态的反面由 `islandHasThreeEdgeLayers` 钉着 ——
+    /// 那条要求同样这几个位置**必须**有亮线和阴影，两条合起来才封死。
+    @Test("除了展开态，岛不描边、不投影",
+          arguments: [IslandState.idle, .running, .notice])
+    func onlyExpandedWearsEdges(state: IslandState) throws {
+        let model = IslandModel.previewModel(state: state)
         let size = canvas(around: model)
         let px = 2
         let image = try raster(IslandShell(model: model), size: size, scale: CGFloat(px))
@@ -442,15 +451,15 @@ struct IslandPixelTests {
         let row = islandBottom / 2 * px
 
         // 岛确实画出来了 —— 不然下面两条在一张空白品红上也是绿的。
-        #expect(image.isIsland(image.width / 2, 4), "idle 的岛根本没画出来")
+        #expect(image.isIsland(image.width / 2, 4), "\(state) 的岛根本没画出来")
 
         // 轮廓内侧那 1pt：有亮线的话是灰度 0.2。
         let side = image.gray(bodyLeft + 1, row)
-        #expect(side < 0.05, "idle 的侧边灰度 \(side) —— 亮线跑上来了")
+        #expect(side < 0.05, "\(state) 的侧边灰度 \(side) —— 亮线跑上来了")
 
         // 贴着下沿外面：有阴影的话这儿会被压暗两成以上。
         let near = image.darkening(image.width / 2, (islandBottom + 4) * px)
-        #expect(near < 0.03, "idle 的岛下面压暗了 \(near) —— 阴影跑上来了")
+        #expect(near < 0.03, "\(state) 的岛下面压暗了 \(near) —— 阴影跑上来了")
     }
 
     // MARK: - §6.3：文字不许压到刘海底下
