@@ -2,8 +2,6 @@
 
 macOS 刘海区的灵动岛终端。常驻屏幕顶部，在 Notch 里开真正的 shell，可以跑 Claude Code、Grok、Codex、Gemini CLI 或任何命令行工具。
 
-<img width="600" alt="NotchAgent" src="docs/screenshot.png">
-
 ## 特性
 
 - **真终端** — `$SHELL -l` 起登录 shell，PTY 交互与 Terminal.app 一致
@@ -47,12 +45,17 @@ xcodebuild test -project NotchAgent/NotchAgent.xcodeproj -scheme NotchAgent -des
 新建 Tab 选一个项目目录，输入命令（或留空直接开 shell）。在岛里输 `claude` 会走包装脚本，自动把 hook 配置带上——收起岛时能看到 Claude Code 的实时进度；输别的命令就是普通终端。
 
 ```
+岛起 $SHELL -l，并把 ZDOTDIR 指到自己的目录
+  → 岛的 rc 先原样跑一遍你的 .zshenv/.zprofile/.zshrc/.zlogin
+  → 你的 rc 跑完之后，才把 bin/ 放到 PATH 最前面
 用户在岛里输入 claude
   → 走 Application Support/NotchAgent/bin/claude（包装脚本）
   → 自动加 --settings（指向 island-hooks.json）
   → Hook 事件经 BSD socket 回到岛
   → 收起态显示进度文案
 ```
+
+**为什么要绕 ZDOTDIR 这一层**：光把 `bin/` 放进 PATH 最前面压不住登录 shell。`/etc/zprofile` 里的 `path_helper` 会按 `/etc/paths` 重建 PATH 把它推到末尾，你的 `~/.zshrc` 通常还会再补一句 `export PATH="$HOME/.local/bin:$PATH"`。前置必须发生在你的 rc **之后**才有效——否则 `claude` 解析到的是你自己装的那个，`--settings` 加不上，hook 一条都不发。VS Code 和 iTerm 的 shell 集成用的是同一个机制。你的别名、函数、其他 PATH 前置全部照常生效。
 
 ## 许可
 
