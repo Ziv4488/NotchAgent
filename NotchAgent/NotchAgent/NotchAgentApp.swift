@@ -140,7 +140,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "偏好设置…", action: #selector(showPreferences), keyEquivalent: ",").target = self
-        menu.addItem(withTitle: "退出 NotchAgent", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        // **退出走自己的 selector，不是 `NSApplication.terminate(_:)`。**
+        // macOS 26 会给标准动作自动配一个 SF Symbol，`terminate:` 就在那张表里。
+        // 一个带图标的项会把**同一段里**（两条分隔线之间）所有项的标题一起往右推，
+        // 于是「偏好设置…」跟着缩进，整张菜单看着分了两级 —— 用户 08-12 报的
+        // 「菜单都要左对齐，退出不要图标」。换个自定义 selector 就不匹配那张表了。
+        // 行为完全一样：`NSApp.terminate` 照样走 `applicationShouldTerminate`。
+        let quit = menu.addItem(withTitle: "退出 NotchAgent", action: #selector(quit), keyEquivalent: "q")
+        quit.target = self
+        // 系统真要塞图标的话，这一句把它按掉；本来就没有时是空操作。
+        quit.image = nil
+        // 同一段里只要有一个项缩进，整段都会跟着。逐个按平，别指望默认值。
+        for item in menu.items { item.indentationLevel = 0 }
         return menu
     }
 
@@ -180,6 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func newTask() { model.beginNewTask() }
+    @objc private func quit() { NSApp.terminate(nil) }
     @objc private func debugExpand() { model.send(.click) }
     @objc private func debugDismiss() { model.send(.dismiss) }
     @objc private func debugAllRead() { model.send(.allRead) }

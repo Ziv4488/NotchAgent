@@ -788,7 +788,9 @@ open ~/Library/Developer/Xcode/DerivedData/NotchAgent-*/Build/Products/Debug/Not
 
 | # | 操作 | 期望 |
 |---|---|---|
+| 17.0 | 点菜单栏图标，看整张菜单 | **每一项的文字都在同一条左边线上**，一个图标都没有。macOS 26 会给 `terminate:` 这种标准动作自动配 SF Symbol，而一个带图标的项会把**同一段里**（两条分隔线之间）所有项一起往右推 —— 用户 08-12 报的「菜单都要左对齐，退出不要图标」就是「偏好设置…」被「退出」的图标顶缩进了。改法是退出走自定义 selector，不匹配那张表。**这条只能人眼判**：图标是系统在菜单显示那一刻贴上去的，`NSMenuItem.image` 在代码里读永远是 nil，写测试是假测试 |
 | 17.1 | 菜单 → 偏好设置… | 弹出标题为「NotchAgent 偏好设置」的窗口，有「通用」和「终端」两个 section |
+| 17.1b | 菜单 → 退出 NotchAgent（或 ⌘Q） | 和以前一样：有活会话时先弹确认框，确认后收干净再退。换 selector 不改行为，走的还是 `applicationShouldTerminate` |
 | 17.2 | 再点一次「偏好设置…」 | 不弹第二个窗口，把已有的那个提到前面来 |
 | ~~17.3~~ | ~~claude 路径留空~~ | 08-08 去掉了 claude 路径设置（shell-first） |
 | ~~17.4~~ | ~~填一个不存在的路径~~ | 同上 |

@@ -124,6 +124,10 @@ zsh 的 `ZDOTDIR` 指到 `Application Support/NotchAgent/zdotdir`，四个 rc �
   那两态都是没人在看的时候岛自己冒出来的，一描边就成了浮在壁纸上的控件。
   `showsEdges` 现在是 `state == .expanded`，`IslandPixelTests` 一正一反两条钉着。
   **等你复测观感**：无边框的通知态在浅色壁纸上还立不立得住
+- **菜单左对齐（08-12）**：退出改走自定义 selector，躲开 macOS 26 给
+  `terminate:` 自动配的 SF Symbol —— 那个图标会把同一段里的「偏好设置…」
+  一起顶缩进。**§17.0 等你复测**，这条只能人眼判（图标是显示那一刻才贴上的，
+  代码里读 `NSMenuItem.image` 永远是 nil，写测试是假测试）
 - **外沿**：08-04 按用户给的 macOS 26 窗口截图改了下角（12→16）和外沿三层
   （内 1pt 白 20% + 外 0.5pt 黑 + 阴影 0.7/18pt/下偏 6）；当天晚上按实机反馈
   收了两处 —— **顶边不描线**（`NotchShape.closesTop`）、**idle 态整套不上**
